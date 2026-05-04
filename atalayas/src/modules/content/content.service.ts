@@ -10,6 +10,7 @@ import { User } from '@prisma/client';
 import { AiService } from '../../infrastructure/ai/ai.service';
 import { StorageService } from '../../infrastructure/storage/storage.service';
 import { generate } from 'rxjs';
+import { EnrollmentService } from '../enrollment/enrollment.service';
 
 @Injectable()
 export class ContentService {

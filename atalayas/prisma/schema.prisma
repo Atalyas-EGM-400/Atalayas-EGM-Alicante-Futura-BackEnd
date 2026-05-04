@@ -475,7 +475,6 @@ model Company {
   OnboardingStep OnboardingStep[]
   Service        Service[]
   Suggestion     Suggestion[]
-  Announcement   Announcement[]
   User           User[]
 
   @@schema("public")
@@ -562,7 +561,6 @@ model Content {
   practiceLab    Json?
   Course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   userProgresses UserProgress[]
-  videoUrl String?
 
   @@schema("public")
 }
