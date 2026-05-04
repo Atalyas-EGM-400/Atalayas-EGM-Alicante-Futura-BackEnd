@@ -94,42 +94,105 @@ export class AuthService {
   }
 
   async register(dto: RegisterDto) {
-    // 1. Creamos en Supabase (Auth)
-    const { data, error } = await this.supabaseAdmin.auth.admin.createUser({
-      email: dto.email,
-      password: dto.password,
-      email_confirm: true,
-      user_metadata: {
-        name: dto.name,
-        role: dto.role, // Importante para el JWT
-        companyId: dto.companyId,
+  // Guardamos la contraseña original para enviarla por correo
+  const originalPassword = dto.password;
+  
+  // 1. Creamos en Supabase (Auth)
+  const { data, error } = await this.supabaseAdmin.auth.admin.createUser({
+    email: dto.email,
+    password: dto.password,
+    email_confirm: true,
+    user_metadata: {
+      name: dto.name,
+      role: dto.role,
+      companyId: dto.companyId,
+      jobRole: dto.jobRole,
+    },
+  });
+
+  if (error) throw new UnauthorizedException(error.message);
+
+  try {
+    // 2. Creamos en Prisma (Public)
+    const newUser = await this.prismaService.user.create({
+      data: {
+        id: data.user.id,
+        email: dto.email,
+        name: dto.name || 'Usuario',
+        role: (dto.role as Role) || Role.EMPLOYEE,
+        companyId: dto.companyId || null,
         jobRole: dto.jobRole,
       },
     });
 
-    if (error) throw new UnauthorizedException(error.message);
-
+    // 3. Enviamos correo de bienvenida con la contraseña temporal
     try {
-      // 2. Creamos en Prisma (Public)
-      // Usamos el ID exacto que nos ha devuelto Supabase
-      return await this.prismaService.user.create({
-        data: {
-          id: data.user.id, // 👈 Este ID es sagrado (FK)
-          email: dto.email,
-          name: dto.name || 'Usuario',
-          // Validamos el rol para que coincida con tu Enum de Prisma
-          role: (dto.role as Role) || Role.EMPLOYEE,
-          companyId: dto.companyId || null,
-          jobRole: dto.jobRole,
-        },
+      await this.mailerService.sendMail({
+        to: dto.email,
+        subject: 'Bienvenido a Atalayas EGM - Tus credenciales de acceso',
+        html: `<div style="background-color: #f5f5f7; padding: 40px 20px; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+          <div style="max-width: 500px; margin: 0 auto; background-color: #ffffff; border-radius: 24px; padding: 40px; box-shadow: 0 4px 12px rgba(0,0,0,0.05);">
+            
+            <div style="text-align: center; margin-bottom: 30px;">
+              <h1 style="font-size: 24px; font-weight: 600; color: #1d1d1f; margin: 0; letter-spacing: -0.02em;">Atalayas EGM</h1>
+            </div>
+
+            <div style="height: 1px; background-color: #d2d2d7; margin-bottom: 30px;"></div>
+
+            <h2 style="font-size: 21px; font-weight: 600; color: #1d1d1f; margin-bottom: 16px; letter-spacing: -0.01em;">¡Bienvenido/a, ${dto.name}!</h2>
+            
+            <p style="font-size: 15px; line-height: 1.5; color: #424245; margin-bottom: 24px;">
+              Te damos la bienvenida a la plataforma de formación de <strong>Atalayas EGM</strong>. A continuación encontrarás tus credenciales de acceso:
+            </p>
+
+            <div style="background-color: #f5f5f7; border-radius: 16px; padding: 20px; margin: 25px 0;">
+              <p style="margin: 0 0 12px 0;">
+                <strong style="color: #1d1d1f;">📧 Correo electrónico:</strong><br>
+                <span style="color: #0071e3;">${dto.email}</span>
+              </p>
+              <p style="margin: 0;">
+                <strong style="color: #1d1d1f;">🔐 Contraseña temporal:</strong><br>
+                <span style="font-family: monospace; font-size: 16px; background-color: #ffffff; padding: 8px 12px; border-radius: 8px; display: inline-block; letter-spacing: 1px;">${originalPassword}</span>
+              </p>
+            </div>
+
+            <p style="font-size: 14px; color: #86868b; margin-top: 20px;">
+              ⚠️ Por seguridad, te recomendamos cambiar esta contraseña la primera vez que accedas.
+            </p>
+
+            <div style="text-align: center; margin: 35px 0;">
+              <a href="${process.env.FRONTEND_URL || 'http://localhost:5173'}/login" 
+                 style="background-color: #0071e3; color: #ffffff; padding: 14px 28px; border-radius: 12px; text-decoration: none; font-size: 15px; font-weight: 500; display: inline-block;">
+                Iniciar sesión
+              </a>
+            </div>
+
+            <div style="height: 1px; background-color: #d2d2d7; margin-top: 30px; margin-bottom: 20px;"></div>
+
+            <p style="font-size: 12px; color: #86868b; text-align: center; margin: 0;">
+              Si no solicitaste esta cuenta, por favor ignora este mensaje.
+            </p>
+            <p style="font-size: 12px; color: #86868b; text-align: center; margin-top: 10px;">
+              &copy; ${new Date().getFullYear()} Atalayas EGM. Todos los derechos reservados.
+            </p>
+          </div>
+        </div>`,
       });
-    } catch (err) {
-      // Si falla Prisma, borramos el de Supabase
-      await this.supabaseAdmin.auth.admin.deleteUser(data.user.id);
-      console.error('Error Prisma:', err);
-      throw new InternalServerErrorException('Error al sincronizar con Prisma');
+      console.log(`Correo de bienvenida enviado a ${dto.email}`);
+    } catch (mailError) {
+      console.error('Error enviando correo de bienvenida:', mailError);
+      // No lanzamos error para que la creación del usuario no falle
     }
+
+    return newUser;
+    
+  } catch (err) {
+    // Si falla Prisma, borramos el de Supabase
+    await this.supabaseAdmin.auth.admin.deleteUser(data.user.id);
+    console.error('Error Prisma:', err);
+    throw new InternalServerErrorException('Error al sincronizar con Prisma');
   }
+}
 
   async registerPublicUser(registerDto: RegisterDto) {
     const { data, error } = await this.supabase.auth.signUp({
