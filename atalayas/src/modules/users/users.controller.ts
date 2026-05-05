@@ -17,11 +17,12 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from '@nestjs/common';
 import { Req } from '@nestjs/common';
+
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) {}
+  constructor(private readonly usersService: UsersService) { }
 
   @Post()
   @Roles('ADMIN', 'GENERAL_ADMIN')
@@ -32,6 +33,13 @@ export class UsersController {
   @Get()
   async findAll(@Req() request: Request) {
     return await this.usersService.findAll(request['user']);
+  }
+
+  // 🔥 NUEVO ENDPOINT: Obtener roles únicos de empleados
+  @Get('roles')
+  @Roles('ADMIN', 'GENERAL_ADMIN')
+  async getUniqueJobRoles() {
+    return await this.usersService.getUniqueJobRoles();
   }
 
   @Get(':id')

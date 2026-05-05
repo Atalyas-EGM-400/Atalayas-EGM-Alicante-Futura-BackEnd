@@ -89,14 +89,26 @@ export class EnrollmentService {
     }
 
     if (requestUser.role === 'EMPLOYEE') {
+      // 🔥 FILTRO MODIFICADO: Incluir filtro por jobRole
+      const whereCondition: any = {
+        OR: [
+          { isPublic: true },
+          { companyId: requestUser.companyId },
+        ],
+      };
+
+      // Solo aplicar filtro de jobRole si el empleado tiene un rol
+      if (requestUser.jobRole) {
+        whereCondition.AND = {
+          OR: [
+            { jobRole: null }, // Cursos de onboarding (sin restricción)
+            { jobRole: requestUser.jobRole }, // Especialización que coincide con su rol
+          ],
+        };
+      }
 
       const courses = await this.prisma.course.findMany({
-        where: {
-          OR: [
-            { isPublic: true },
-            { companyId: requestUser.companyId },
-          ],
-        },
+        where: whereCondition,
         include: {
           Content: {
             include: {

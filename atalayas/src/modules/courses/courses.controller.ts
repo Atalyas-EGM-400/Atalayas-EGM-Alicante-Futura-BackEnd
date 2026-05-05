@@ -39,7 +39,7 @@ import { GenerateAiContentDto } from './dto/generate-ai.dto.js';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('courses')
 export class CoursesController {
-  constructor(private readonly coursesService: CoursesService) {}
+  constructor(private readonly coursesService: CoursesService) { }
 
   @Post()
   @Roles('ADMIN', 'GENERAL_ADMIN')
@@ -60,6 +60,15 @@ export class CoursesController {
   })
   async findAll(@Req() req: Request & { user: User }) {
     return await this.coursesService.findAll(req.user);
+  }
+
+  @Get('job-roles')
+  @Roles('ADMIN', 'GENERAL_ADMIN')
+  @ApiOperation({
+    summary: 'Obtener todos los roles únicos de empleados para el selector de cursos'
+  })
+  async getUniqueJobRoles() {
+    return await this.coursesService.getUniqueJobRoles();
   }
 
   @Get(':id')
