@@ -18,8 +18,8 @@ export class ContentService {
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
     private readonly storageService: StorageService,
-    private readonly enrollmentService: EnrollmentService
-  ) { }
+    private readonly enrollmentService: EnrollmentService,
+  ) {}
 
   async create(
     createContentDto: CreateContentDto,
@@ -338,7 +338,7 @@ export class ContentService {
     if (isPerfectScore) {
       await this.enrollmentService.completeManualLesson(
         requestUser.id,
-        contentId
+        contentId,
       );
     }
 
