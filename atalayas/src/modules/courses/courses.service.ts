@@ -53,7 +53,6 @@ export class CoursesService {
     }
 
     return await this.prismaService.course.create({
-      // ... resto de tu lógica de creación
 
       data: {
         title: createCourseDto.title,

@@ -720,6 +720,7 @@ model Announcement {
   isPublic  Boolean  @default(false)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   companyId String?  @db.Uuid
+  imageUrl  String?
   Company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@schema("public")

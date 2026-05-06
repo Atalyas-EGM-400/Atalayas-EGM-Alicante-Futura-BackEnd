@@ -10,7 +10,7 @@ import { Transform } from 'class-transformer';
 export class CreateServiceDto {
   @ApiProperty({ example: 'Nombre del servicio' })
   @IsString()
-  title: string;
+  title!: string;
 
   @ApiProperty({ example: 'Descripción del servicio', required: false })
   @IsString()
