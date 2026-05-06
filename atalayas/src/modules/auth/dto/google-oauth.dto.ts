@@ -4,5 +4,5 @@ import { ApiProperty } from '@nestjs/swagger';
 export class GoogleOAuthDto {
   @ApiProperty({ example: '' })
   @IsString()
-  token: string;
+  token!: string;
 }

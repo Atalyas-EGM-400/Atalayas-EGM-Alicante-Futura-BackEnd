@@ -16,19 +16,22 @@ import { CreateEnrollmentDto } from './dto/create-enrollment.dto.js';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto.js';
 import { Request } from 'express';
 import { GetUser } from '../../common/decorators/get-user.decorator.js';
+import { Res } from '@nestjs/common';
+import { ForbiddenException } from '@nestjs/common';
 import { AuthGuard } from '../../common/guards/auth.guard.js';
 import { RolesGuard } from '../../common/guards/roles.guard.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import type { User } from '@prisma/client';
 import { UpdateVideoProgressDto } from './dto/update-video-progress.dto.js';
 import { CompleteManualLessonDto } from './dto/complete-manual-lesson.dto.js';
+import { NotFoundException } from '@nestjs/common';
 
 @ApiTags('Enrollment')
 @ApiBearerAuth()
 @UseGuards(AuthGuard) // 🔒 Protegemos todas las rutas
 @Controller('enrollment')
 export class EnrollmentController {
-  constructor(private readonly enrollmentService: EnrollmentService) {}
+  constructor(private readonly enrollmentService: EnrollmentService) { }
 
   @Post()
   @ApiOperation({
@@ -90,8 +93,15 @@ export class EnrollmentController {
     // 4. Corregimos el nombre al que pusimos en el Service: completeManualLesson
     return await this.enrollmentService.completeManualLesson(
       user.id,
-      completeDto.contentId,
+      completeDto.contentId!,
     );
+  }
+  @Post('content-access')
+  async markOnAccess(
+    @GetUser() user: User,
+    @Body('contentId') contentId: string,
+  ) {
+    return this.enrollmentService.markContentOnAccess(user.id, contentId);
   }
 
   // ⬇️ RUTAS DINÁMICAS (CON :id) DESPUÉS ⬇️
@@ -122,5 +132,53 @@ export class EnrollmentController {
     @Req() req: Request & { user: User },
   ) {
     return this.enrollmentService.remove(id, req.user);
+  }
+
+  @Get('certificate/:courseId')
+  async getCertificate(
+    @GetUser() user: User,
+    @Param('courseId') courseId: string,
+    @Res() res
+  ) {
+    const enrollment = await this.enrollmentService['prisma'].enrollment.findUnique({
+      where: {
+        userId_courseId: {
+          userId: user.id,
+          courseId,
+        },
+      },
+    });
+
+    if (!enrollment || enrollment.progress !== 100) {
+      throw new ForbiddenException('Curso no completado');
+    }
+
+    const course = await this.enrollmentService['prisma'].course.findUnique({
+      where: { id: courseId },
+    });
+
+
+    const fullUser = await this.enrollmentService['prisma'].user.findUnique({
+      where: { id: user.id },
+      include: {
+        Company: true,
+      },
+    });
+    if (!fullUser) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (!fullUser.Company) {
+      throw new NotFoundException('El usuario no tiene empresa');
+    }
+
+    const pdf = await this.enrollmentService.generateCertificate(fullUser, fullUser.Company, course);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename=certificado.pdf',
+    });
+
+    res.send(pdf);
   }
 }

@@ -9,5 +9,6 @@ import { PrismaModule } from '../../infrastructure/prisma/prisma.module';
   imports: [ConfigModule, PrismaModule, AuthModule],
   controllers: [EnrollmentController],
   providers: [EnrollmentService],
+  exports: [EnrollmentService],
 })
 export class EnrollmentModule {}

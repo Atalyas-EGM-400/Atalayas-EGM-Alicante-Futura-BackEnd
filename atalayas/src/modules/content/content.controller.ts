@@ -33,7 +33,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('courses')
 export class ContentController {
-  constructor(private readonly contentService: ContentService) {}
+  constructor(private readonly contentService: ContentService) { }
 
   // 1. CREAR CONTENIDO
   @Post(':courseId/content')

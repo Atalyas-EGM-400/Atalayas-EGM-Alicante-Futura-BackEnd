@@ -7,11 +7,14 @@ import {
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto.js';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto.js';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service.js';
-import { User } from '@prisma/client';
+import { User, Company } from '@prisma/client';
+import { PDFDocument, rgb, StandardFonts } from 'pdf-lib';
+import * as fs from 'fs';
+import * as path from 'path';
 
 @Injectable()
 export class EnrollmentService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async create(createEnrollmentDto: CreateEnrollmentDto, requestUser: User) {
     // 1. Los empleados no pueden crear matriculaciones
@@ -26,6 +29,7 @@ export class EnrollmentService {
     // 2. Validar que el usuario objetivo existe y pertenece a la empresa (si es ADMIN)
     const targetUser = await this.prisma.user.findUnique({
       where: { id: userId },
+
     });
     if (!targetUser) throw new NotFoundException(`Usuario no encontrado.`);
 
@@ -84,11 +88,72 @@ export class EnrollmentService {
       });
     }
 
-    // EMPLOYEE: Solo ve SUS propias matriculaciones
-    return this.prisma.enrollment.findMany({
-      where: { userId: requestUser.id },
-      include: { User: true, Course: true },
-    });
+    if (requestUser.role === 'EMPLOYEE') {
+      // 🔥 FILTRO MODIFICADO: Incluir filtro por jobRole
+      const whereCondition: any = {
+        OR: [
+          { isPublic: true },
+          { companyId: requestUser.companyId },
+        ],
+      };
+
+      // Solo aplicar filtro de jobRole si el empleado tiene un rol
+      if (requestUser.jobRole) {
+        whereCondition.AND = {
+          OR: [
+            { jobRole: null }, // Cursos de onboarding (sin restricción)
+            { jobRole: requestUser.jobRole }, // Especialización que coincide con su rol
+          ],
+        };
+      }
+
+      const courses = await this.prisma.course.findMany({
+        where: whereCondition,
+        include: {
+          Content: {
+            include: {
+              userProgresses: {
+                where: { userId: requestUser.id },
+              },
+            },
+          },
+          Enrollment: {
+            where: {
+              userId: requestUser.id,
+            },
+          },
+        },
+      });
+
+      return courses.map(course => {
+        const enrollment = course.Enrollment[0];
+
+        const totalContents = course.Content.length;
+
+        const completedContents = course.Content.filter(c =>
+          c.userProgresses.length > 0 &&
+          c.userProgresses[0].isCompleted
+        ).length;
+
+        const progress =
+          totalContents > 0
+            ? Math.round((completedContents / totalContents) * 100)
+            : 0;
+
+        if (enrollment && enrollment.progress !== progress) {
+          this.prisma.enrollment.update({
+            where: { id: enrollment.id },
+            data: { progress },
+          }).catch(() => { });
+        }
+
+        return {
+          ...course,
+          progress,
+          isCompleted: progress === 100,
+        };
+      });
+    }
   }
 
   async findOne(id: string, requestUser: User) {
@@ -200,6 +265,8 @@ export class EnrollmentService {
 
     if (!content) throw new NotFoundException('Contenido no encontrado');
 
+    await this.ensureEnrollment(userId, content.courseId);
+
     // Contamos el total de lecciones del curso
     const totalLessons = await this.prisma.content.count({
       where: { courseId: content.courseId },
@@ -210,13 +277,21 @@ export class EnrollmentService {
       where: {
         userId,
         isCompleted: true,
-        Content: { courseId: content.courseId },
+        contentId: {
+          in: await this.prisma.content.findMany({
+            where: { courseId: content.courseId },
+            select: { id: true },
+          }).then(res => res.map(c => c.id)),
+        },
       },
     });
 
     // Aplicamos la fórmula: progress = (completadas / totales) * 100
     const percentage =
       totalLessons > 0 ? Math.round((completedCount / totalLessons) * 100) : 0;
+
+    const isCompleted = percentage === 100;
+
 
     // Actualizamos el resumen en la tabla Enrollment
     return await this.prisma.enrollment.update({
@@ -285,5 +360,120 @@ export class EnrollmentService {
     }
 
     return results;
+  }
+  private async ensureEnrollment(userId: string, courseId: string) {
+    const exists = await this.prisma.enrollment.findUnique({
+      where: { userId_courseId: { userId, courseId } },
+    });
+
+    if (!exists) {
+      await this.prisma.enrollment.create({
+        data: {
+          userId,
+          courseId,
+          progress: 0,
+          completedContent: 0,
+        },
+      });
+    }
+  }
+
+  async markContentOnAccess(userId: string, contentId: string) {
+    const content = await this.prisma.content.findUnique({
+      where: { id: contentId },
+    });
+
+    if (!content) {
+      throw new NotFoundException('Contenido no encontrado');
+    }
+
+    const hasQuiz = content.quiz && content.quiz !== 'null';
+
+    // 👉 Si TIENE quiz → NO completar automáticamente
+    if (hasQuiz) {
+      return;
+    }
+
+    // 👉 Si NO tiene quiz → marcar como completado
+    await this.prisma.userProgress.upsert({
+      where: { userId_contentId: { userId, contentId } },
+      update: {
+        isCompleted: true,
+        completedAt: new Date(),
+      },
+      create: {
+        userId,
+        contentId,
+        isCompleted: true,
+        completedAt: new Date(),
+      },
+    });
+
+    return await this.syncEnrollmentProgress(userId, contentId);
+  }
+
+  async generateCertificate(user: User, company: Company, course: any) {
+    const filePath = path.join(process.cwd(), 'src/assets/certificate-base.pdf');
+
+    const existingPdfBytes = fs.readFileSync(filePath);
+    const pdfDoc = await PDFDocument.load(existingPdfBytes);
+
+    const page = pdfDoc.getPages()[0];
+    const { width, height } = page.getSize();
+
+    const font = await pdfDoc.embedFont(StandardFonts.HelveticaBold);
+    const fontRegular = await pdfDoc.embedFont(StandardFonts.Helvetica);
+
+    const userName = user.name || 'Empleado';
+    const courseTitle = course.title || 'Curso';
+
+
+    const companyName = company.name || 'tu empresa';
+    const date = new Date().toLocaleDateString();
+
+    // 🧠 CENTRAR TEXTO
+    const centerText = (text: string, size: number) => {
+      const textWidth = font.widthOfTextAtSize(text, size);
+      return (width - textWidth) / 2;
+    };
+
+    // 👤 NOMBRE
+    page.drawText(userName, {
+      x: centerText(userName, 28),
+      y: height / 2 + 52,
+      size: 28,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    // 🏢 EMPRESA (NUEVO)
+    page.drawText(companyName, {
+      x: centerText(companyName, 14),
+      y: height / 2 - 2,
+      size: 14,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    // 📘 CURSO
+    page.drawText(courseTitle, {
+      x: centerText(courseTitle, 20),
+      y: height / 2 - 59,
+      size: 20,
+      font,
+      color: rgb(0, 0, 0),
+    });
+
+    // 📅 FECHA
+    page.drawText(date, {
+      x: centerText(date, 14),
+      y: height / 2 - 120,
+      size: 14,
+      font: fontRegular,
+    });
+
+    const pdfBytes = await pdfDoc.save();
+
+    return pdfBytes;
   }
 }

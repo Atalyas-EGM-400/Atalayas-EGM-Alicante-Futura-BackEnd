@@ -469,12 +469,12 @@ model Company {
   description    String?
   logoUrl        String?
   website        String?
+  Announcement   Announcement[]
   Course         Course[]
   Document       Document[]
   OnboardingStep OnboardingStep[]
   Service        Service[]
   Suggestion     Suggestion[]
-  Announcement   Announcement[]
   User           User[]
 
   @@schema("public")
@@ -488,6 +488,7 @@ model Course {
   isPublic   Boolean      @default(false)
   category   String?      @default("'BASICO'")
   fileUrl    String?
+  jobRole    String?
   Content    Content[]
   Company    Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   Enrollment Enrollment[]
@@ -557,9 +558,10 @@ model Content {
   quiz           Json?
   url            String?
   imageUrl       String?
+  videoUrl       String?
+  practiceLab    Json?
   Course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   userProgresses UserProgress[]
-  videoUrl String?
 
   @@schema("public")
 }
@@ -719,6 +721,7 @@ model Announcement {
   isPublic  Boolean  @default(false)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   companyId String?  @db.Uuid
+  imageUrl  String?
   Company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@schema("public")

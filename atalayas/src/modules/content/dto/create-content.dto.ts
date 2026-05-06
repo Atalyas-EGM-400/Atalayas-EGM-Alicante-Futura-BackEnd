@@ -46,4 +46,9 @@ export class CreateContentDto {
   @ApiProperty({ type: 'string', format: 'binary', required: false })
   @IsOptional()
   file?: any;
+
+  @ApiPropertyOptional({ example: 'URL del video del contenido' })
+  @IsString()
+  @IsOptional()
+  videoUrl?: string;
 }
