@@ -16,6 +16,7 @@ export class ContentService {
     private readonly prisma: PrismaService,
     private readonly aiService: AiService,
     private readonly storageService: StorageService,
+    private readonly enrollmentService: EnrollmentService,
   ) {}
 
   async create(
@@ -134,18 +135,21 @@ export class ContentService {
     });
     const nextOrder = lastContent ? lastContent.order + 1 : 1;
 
-    // 5. Guardado Final
-    const dataToSave = {
-      title: createContentDto.title,
-      courseId: courseId,
-      url: finalUrl ?? undefined,
-      summary: summary,
-      quiz: quizData ?? undefined,
-      podcast: podcastData ?? undefined,
-      order: nextOrder,
-    };
-
-    return this.prisma.content.create({ data: dataToSave });
+    // 5. Persistencia en Base de Datos
+    return this.prisma.content.create({
+      data: {
+        title: createContentDto.title,
+        courseId,
+        url: finalUrl,
+        summary,
+        imageUrl,
+        videoUrl,
+        quiz: quizData,
+        podcast: podcastData,
+        practiceLab: labData,
+        order: nextOrder,
+      },
+    });
   }
 
   async findAll(requestUser: User, courseId: string) {
@@ -301,5 +305,32 @@ export class ContentService {
         isCompleted: isPerfectScore,
       },
     });
+
+    if (isPerfectScore) {
+      await this.enrollmentService.completeManualLesson(
+        requestUser.id,
+        contentId,
+      );
+    }
+
+    return progress;
+  }
+  private async ensureUserProgress(userId: string, contentId: string) {
+    const exists = await this.prisma.userProgress.findUnique({
+      where: {
+        userId_contentId: { userId, contentId },
+      },
+    });
+
+    if (!exists) {
+      await this.prisma.userProgress.create({
+        data: {
+          userId,
+          contentId,
+          isCompleted: false,
+          lastTime: 0,
+        },
+      });
+    }
   }
 }
