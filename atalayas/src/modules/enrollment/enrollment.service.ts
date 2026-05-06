@@ -74,52 +74,86 @@ export class EnrollmentService {
 
   async findAll(requestUser: User) {
     // GENERAL_ADMIN: Lo ve todo
-    /*  if (requestUser.role === 'GENERAL_ADMIN') {
-       return this.prisma.enrollment.findMany({
-         include: { User: true, Course: true },
-       });
-     }
- 
-     // ADMIN: Ve las matriculaciones de los empleados de SU empresa
-     if (requestUser.role === 'ADMIN') {
-       return this.prisma.enrollment.findMany({
-         where: { User: { companyId: requestUser.companyId } }, // Magia de Prisma
-         include: { User: true, Course: true },
-       });
-     }
-     // EMPLOYEE: Solo ve SUS propias matriculaciones
-     return this.prisma.enrollment.findMany({
-       where: { userId: requestUser.id },
-       include: { User: true, Course: true },
-     });*/
+    if (requestUser.role === 'GENERAL_ADMIN') {
+      return this.prisma.enrollment.findMany({
+        include: { User: true, Course: true },
+      });
+    }
 
-    const courses = await this.prisma.course.findMany({
-      where: {
+    // ADMIN: Ve las matriculaciones de los empleados de SU empresa
+    if (requestUser.role === 'ADMIN') {
+      return this.prisma.enrollment.findMany({
+        where: { User: { companyId: requestUser.companyId } }, // Magia de Prisma
+        include: { User: true, Course: true },
+      });
+    }
+
+    if (requestUser.role === 'EMPLOYEE') {
+      // 🔥 FILTRO MODIFICADO: Incluir filtro por jobRole
+      const whereCondition: any = {
         OR: [
           { isPublic: true },
           { companyId: requestUser.companyId },
         ],
-      },
-      include: {
-        Enrollment: {
-          where: {
-            userId: requestUser.id,
+      };
+
+      // Solo aplicar filtro de jobRole si el empleado tiene un rol
+      if (requestUser.jobRole) {
+        whereCondition.AND = {
+          OR: [
+            { jobRole: null }, // Cursos de onboarding (sin restricción)
+            { jobRole: requestUser.jobRole }, // Especialización que coincide con su rol
+          ],
+        };
+      }
+
+      const courses = await this.prisma.course.findMany({
+        where: whereCondition,
+        include: {
+          Content: {
+            include: {
+              userProgresses: {
+                where: { userId: requestUser.id },
+              },
+            },
+          },
+          Enrollment: {
+            where: {
+              userId: requestUser.id,
+            },
           },
         },
-      },
-    });
+      });
 
-    // 👇 Aplanamos los datos
-    return courses.map(course => {
-      const enrollment = course.Enrollment[0];
+      return courses.map(course => {
+        const enrollment = course.Enrollment[0];
 
-      return {
-        ...course,
-        progress: enrollment ? enrollment.progress : 0,
-        isCompleted: enrollment ? enrollment.progress === 100 : false,
-      };
-    });
+        const totalContents = course.Content.length;
 
+        const completedContents = course.Content.filter(c =>
+          c.userProgresses.length > 0 &&
+          c.userProgresses[0].isCompleted
+        ).length;
+
+        const progress =
+          totalContents > 0
+            ? Math.round((completedContents / totalContents) * 100)
+            : 0;
+
+        if (enrollment && enrollment.progress !== progress) {
+          this.prisma.enrollment.update({
+            where: { id: enrollment.id },
+            data: { progress },
+          }).catch(() => { });
+        }
+
+        return {
+          ...course,
+          progress,
+          isCompleted: progress === 100,
+        };
+      });
+    }
   }
 
   async findOne(id: string, requestUser: User) {
@@ -378,7 +412,7 @@ export class EnrollmentService {
     return await this.syncEnrollmentProgress(userId, contentId);
   }
 
-  async generateCertificate(user: User, company: Company , course: any) {
+  async generateCertificate(user: User, company: Company, course: any) {
     const filePath = path.join(process.cwd(), 'src/assets/certificate-base.pdf');
 
     const existingPdfBytes = fs.readFileSync(filePath);
@@ -392,7 +426,7 @@ export class EnrollmentService {
 
     const userName = user.name || 'Empleado';
     const courseTitle = course.title || 'Curso';
-    
+
 
     const companyName = company.name || 'tu empresa';
     const date = new Date().toLocaleDateString();

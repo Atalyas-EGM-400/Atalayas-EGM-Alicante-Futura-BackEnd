@@ -44,23 +44,26 @@ export class CoursesService {
       );
     }
 
+    // 🔥 NUEVA VALIDACIÓN: Si es especialización, jobRole es obligatorio
+    if (createCourseDto.category === 'ESPECIALIZADO' && !createCourseDto.jobRole) {
+      throw new BadRequestException('Los cursos de especialización requieren un rol');
+    }
+
     let fileUrl: string | null = null;
 
     if (file) {
-      // Usamos directamente el 'file' que viene de Multer,
-      // storageService ya debería encargarse del resto.
       fileUrl = await this.storageService.uploadFile(file);
     }
 
     return await this.prismaService.course.create({
-      // ... resto de tu lógica de creación
-
       data: {
         title: createCourseDto.title,
         companyId,
         isPublic: createCourseDto.isPublic || false,
         category: createCourseDto.category || 'BASICO',
         fileUrl,
+        // 🔥 NUEVO CAMPO: Si es onboarding, jobRole = null, si es especialización, se usa el valor
+        jobRole: createCourseDto.category === 'BASICO' ? null : createCourseDto.jobRole || null,
       },
     });
   }
@@ -80,6 +83,11 @@ export class CoursesService {
       throw new ForbiddenException('No tienes permisos para actualizar cursos');
     }
 
+    // 🔥 NUEVA VALIDACIÓN: Si se actualiza a especialización, debe tener jobRole
+    if (updateCourseDto.category === 'ESPECIALIZADO' && !updateCourseDto.jobRole) {
+      throw new BadRequestException('Los cursos de especialización requieren un rol');
+    }
+
     let fileUrl = course.fileUrl;
 
     if (file) {
@@ -93,6 +101,16 @@ export class CoursesService {
       fileUrl = await this.storageService.uploadFile(file);
     }
 
+    // 🔥 NUEVO: Determinar el valor de jobRole según la categoría
+    let jobRoleValue: string | null = null;
+    if (updateCourseDto.category === 'ESPECIALIZADO') {
+      jobRoleValue = updateCourseDto.jobRole || course.jobRole;
+    } else if (updateCourseDto.category === 'BASICO') {
+      jobRoleValue = null;
+    } else {
+      jobRoleValue = updateCourseDto.jobRole !== undefined ? updateCourseDto.jobRole : course.jobRole;
+    }
+
     return this.prismaService.course.update({
       where: { id: course.id },
       data: {
@@ -100,12 +118,14 @@ export class CoursesService {
         isPublic: updateCourseDto.isPublic,
         category: updateCourseDto.category,
         fileUrl,
+        jobRole: jobRoleValue, // 🔥 NUEVO CAMPO
       },
     });
   }
 
   /**
    * Obtiene todos los cursos según el rol del usuario (Filtro por empresa o públicos).
+   * 🔥 MODIFICADO: Ahora filtra también por jobRole para empleados
    */
   async findAll(requestUser: User) {
     if (requestUser.role === 'GENERAL_ADMIN') {
@@ -120,10 +140,23 @@ export class CoursesService {
       });
     }
 
+    // 🔥 NUEVO: Para empleados, filtrar también por su jobRole
+    const whereCondition: any = {
+      OR: [{ companyId: requestUser.companyId }, { isPublic: true }],
+    };
+
+    // Si el empleado tiene un rol específico, mostrar solo cursos que coincidan
+    if (requestUser.role === 'EMPLOYEE' && requestUser.jobRole) {
+      whereCondition.AND = {
+        OR: [
+          { jobRole: null }, // Cursos de onboarding (sin restricción)
+          { jobRole: requestUser.jobRole }, // Cursos de especialización que coinciden con su rol
+        ],
+      };
+    }
+
     return this.prismaService.course.findMany({
-      where: {
-        OR: [{ companyId: requestUser.companyId }, { isPublic: true }],
-      },
+      where: whereCondition,
       include: {
         Content: true,
         _count: {
@@ -175,6 +208,16 @@ export class CoursesService {
       throw new ForbiddenException('No tienes permisos para ver este curso');
     }
 
+    // 🔥 NUEVA VALIDACIÓN: Para empleados, verificar si tienen el rol requerido (especialización)
+    if (
+      requestUser.role === 'EMPLOYEE' &&
+      course.category === 'ESPECIALIZADO' &&
+      course.jobRole &&
+      course.jobRole !== requestUser.jobRole
+    ) {
+      throw new ForbiddenException('No tienes el rol requerido para acceder a este curso de especialización');
+    }
+
     return {
       ...course,
       Content: contentWithProgress,
@@ -199,6 +242,22 @@ export class CoursesService {
     return this.prismaService.course.delete({
       where: { id: course.id },
     });
+  }
+
+  // 🔥 NUEVO MÉTODO: Obtener roles únicos de todos los empleados (CORREGIDO)
+  async getUniqueJobRoles() {
+    const users = await this.prismaService.user.findMany({
+      where: {
+        role: 'EMPLOYEE', // Solo empleados, no admins
+      },
+      select: { jobRole: true },
+      distinct: ['jobRole'],
+    });
+
+    // Filtramos manualmente los que son null o vacíos
+    return users
+      .map(u => u.jobRole)
+      .filter((role): role is string => role !== null && role !== undefined && role.trim() !== '');
   }
 
   // 🚀 MÉTODO PARA LA IA (CON GENERACIÓN DE QUIZ INCLUIDA)
@@ -250,7 +309,7 @@ export class CoursesService {
           summary: script,
           url: audioUrl,
           // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-          quiz: quizData, // 👈 ¡MAGIA! Guardamos el JSON del test aquí
+          quiz: quizData,
         },
       });
 
