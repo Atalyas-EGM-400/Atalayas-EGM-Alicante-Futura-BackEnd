@@ -10,5 +10,6 @@ import { StorageModule } from '../../infrastructure/storage/storage.module';
   imports: [PrismaModule, AuthModule, AiModule, StorageModule],
   controllers: [CoursesController],
   providers: [CoursesService],
+  exports: [CoursesService],
 })
-export class CoursesModule {}
+export class CoursesModule { }

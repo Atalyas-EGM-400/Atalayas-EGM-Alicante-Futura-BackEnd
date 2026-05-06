@@ -12,6 +12,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { EnrollmentService } from './enrollment.service.js';
+import { CoursesService } from '../courses/courses.service.js';
 import { CreateEnrollmentDto } from './dto/create-enrollment.dto.js';
 import { UpdateEnrollmentDto } from './dto/update-enrollment.dto.js';
 import { Request } from 'express';
@@ -25,13 +26,17 @@ import type { User } from '@prisma/client';
 import { UpdateVideoProgressDto } from './dto/update-video-progress.dto.js';
 import { CompleteManualLessonDto } from './dto/complete-manual-lesson.dto.js';
 import { NotFoundException } from '@nestjs/common';
+import { Query } from '@nestjs/common';
 
 @ApiTags('Enrollment')
 @ApiBearerAuth()
 @UseGuards(AuthGuard) // 🔒 Protegemos todas las rutas
 @Controller('enrollment')
 export class EnrollmentController {
-  constructor(private readonly enrollmentService: EnrollmentService) { }
+  constructor(
+    private readonly enrollmentService: EnrollmentService,
+    private readonly coursesService: CoursesService,
+  ) { }
 
   @Post()
   @ApiOperation({
@@ -104,6 +109,76 @@ export class EnrollmentController {
     return this.enrollmentService.markContentOnAccess(user.id, contentId);
   }
 
+  @Get('certificate/:courseId')
+  async getCertificate(
+    @GetUser() user: User,
+    @Param('courseId') courseId: string,
+    @Query('userId') userId: string,
+    @Res() res
+  ) {
+    let targetUserId = user.id;
+
+    if (user.role === 'ADMIN' || user.role === 'GENERAL_ADMIN') {
+      if (userId) {
+        targetUserId = userId;
+      }
+    }
+
+    if (user.role === 'ADMIN') {
+      const targetUser = await this.enrollmentService['prisma'].user.findUnique({
+        where: { id: targetUserId },
+      });
+
+      if (!targetUser || targetUser.companyId !== user.companyId) {
+        throw new ForbiddenException('No pertenece a tu empresa');
+      }
+    }
+
+    const enrollment = await this.enrollmentService['prisma'].enrollment.findUnique({
+      where: {
+        userId_courseId: {
+          userId: targetUserId,
+          courseId,
+        },
+      },
+    });
+
+    if (user.role !== 'ADMIN' && (!enrollment || enrollment.progress !== 100)) {
+      throw new ForbiddenException('Curso no completado' + ' ' + enrollment + ' ' + enrollment?.progress);
+    }
+
+    const course = await this.coursesService.findById(courseId);
+
+
+
+    if (!course) {
+      throw new NotFoundException('Curso no encontrado ' + courseId);
+    }
+
+    const fullUser = await this.enrollmentService['prisma'].user.findUnique({
+      where: { id: targetUserId },
+      include: {
+        Company: true,
+      },
+    });
+    if (!fullUser) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    if (!fullUser.Company) {
+      throw new NotFoundException('El usuario no tiene empresa');
+    }
+
+    const pdf = await this.enrollmentService.generateCertificate(fullUser, fullUser.Company, course);
+
+    res.set({
+      'Content-Type': 'application/pdf',
+      'Content-Disposition': 'attachment; filename=certificado.pdf',
+    });
+
+    res.send(pdf);
+  }
+
   // ⬇️ RUTAS DINÁMICAS (CON :id) DESPUÉS ⬇️
 
   @Get(':id')
@@ -134,51 +209,4 @@ export class EnrollmentController {
     return this.enrollmentService.remove(id, req.user);
   }
 
-  @Get('certificate/:courseId')
-  async getCertificate(
-    @GetUser() user: User,
-    @Param('courseId') courseId: string,
-    @Res() res
-  ) {
-    const enrollment = await this.enrollmentService['prisma'].enrollment.findUnique({
-      where: {
-        userId_courseId: {
-          userId: user.id,
-          courseId,
-        },
-      },
-    });
-
-    if (!enrollment || enrollment.progress !== 100) {
-      throw new ForbiddenException('Curso no completado');
-    }
-
-    const course = await this.enrollmentService['prisma'].course.findUnique({
-      where: { id: courseId },
-    });
-
-
-    const fullUser = await this.enrollmentService['prisma'].user.findUnique({
-      where: { id: user.id },
-      include: {
-        Company: true,
-      },
-    });
-    if (!fullUser) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
-
-    if (!fullUser.Company) {
-      throw new NotFoundException('El usuario no tiene empresa');
-    }
-
-    const pdf = await this.enrollmentService.generateCertificate(fullUser, fullUser.Company, course);
-
-    res.set({
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': 'attachment; filename=certificado.pdf',
-    });
-
-    res.send(pdf);
-  }
 }
