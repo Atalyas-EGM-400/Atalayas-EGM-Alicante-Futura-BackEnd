@@ -1,6 +1,6 @@
 generator client {
   provider        = "prisma-client-js"
-  previewFeatures = ["partialIndexes"]
+  previewFeatures = ["partialIndexes", "driverAdapters"]
 }
 
 datasource db {
@@ -488,6 +488,7 @@ model Course {
   isPublic   Boolean      @default(false)
   category   String?      @default("'BASICO'")
   fileUrl    String?
+  jobRole    String?
   Content    Content[]
   Company    Company?     @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   Enrollment Enrollment[]
@@ -720,6 +721,7 @@ model Announcement {
   isPublic  Boolean  @default(false)
   createdAt DateTime @default(now()) @db.Timestamptz(6)
   companyId String?  @db.Uuid
+  imageUrl  String?
   Company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
 
   @@schema("public")
