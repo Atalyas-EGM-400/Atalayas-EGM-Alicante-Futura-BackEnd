@@ -27,6 +27,15 @@ export class CreateCourseDto {
   category?: string;
 
   @ApiProperty({
+    required: false,
+    example: 'Técnico',
+    description: 'Rol requerido para cursos de especialización (solo obligatorio si category = ESPECIALIZADO)'
+  })
+  @IsString()
+  @IsOptional()
+  jobRole?: string;
+
+  @ApiProperty({
     type: 'string',
     format: 'binary',
     required: false,
