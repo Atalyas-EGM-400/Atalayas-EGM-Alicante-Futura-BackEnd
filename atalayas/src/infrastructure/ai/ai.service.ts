@@ -4,7 +4,6 @@ import axios from 'axios';
 import { extractText } from 'unpdf';
 import { StorageService } from '../storage/storage.service';
 
-
 type QuizQuestion = {
   question: string;
   options: string[];
@@ -69,10 +68,21 @@ export class AiService {
   async generateQuizFromText(summaryText: string): Promise<QuizQuestion[]> {
     try {
       const prompt = `
-        Eres un profesor experto. Genera un test de 4 preguntas de opción múltiple.
-        REGLA ESTRICTA: Responde ÚNICAMENTE con un Array JSON. 
-        No incluyas explicaciones.
-        Formato: [{"question": "...", "options": ["...", "..."], "correctAnswer": "..."}]
+        Eres un profesor experto. Genera un test de 4 preguntas de opción múltiple basado en el texto.
+        REGLA ESTRICTA: Responde ÚNICAMENTE con un objeto JSON que contenga una propiedad llamada "questions".
+        No incluyas explicaciones fuera del JSON.
+        
+        Formato esperado:
+        {
+          "questions": [
+            {
+              "question": "texto de la pregunta",
+              "options": ["opcion A", "opcion B", "opcion C", "opcion D"],
+              "correctAnswer": "la respuesta exacta que coincida con una de las opciones"
+            }
+          ]
+        }
+
         Texto: "${summaryText}"
       `;
 
@@ -80,22 +90,26 @@ export class AiService {
         messages: [{ role: 'user', content: prompt }],
         model: 'llama-3.3-70b-versatile',
         temperature: 0.2,
-        response_format: { type: 'json_object' }, // Groq soporta JSON mode
+        response_format: { type: 'json_object' }, // Obliga a que sea un objeto {}
       });
 
-      let content = response.choices[0].message.content || '[]';
+      const content =
+        response.choices[0].message.content || '{"questions": []}';
 
-      // Limpieza por si el modelo incluye Markdown
-      content = content
-        .replace(/```json/gi, '')
-        .replace(/```/g, '')
-        .trim();
+      // Parseamos el objeto
+      const parsed = JSON.parse(content);
 
-      const parsed = JSON.parse(content) as
-        | { questions?: QuizQuestion[] }
-        | QuizQuestion[];
-      // Si el modelo envuelve el array en un objeto { "questions": [...] }
-      return Array.isArray(parsed) ? parsed : parsed.questions || [];
+      // Extraemos el array del objeto, validando que exista
+      if (parsed && Array.isArray(parsed.questions)) {
+        return parsed.questions;
+      }
+
+      // Si el modelo devolvió el array directamente a pesar de todo
+      if (Array.isArray(parsed)) {
+        return parsed;
+      }
+
+      return [];
     } catch (error) {
       console.error('🚨 Error generando el Quiz:', error);
       return [];
