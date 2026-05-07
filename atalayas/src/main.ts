@@ -19,7 +19,12 @@ async function bootstrap() {
 
   // 2. Configuración de CORS para el frontend
   app.enableCors({
-    origin: 'http://localhost:5173',
+    origin: [
+      'http://localhost:5173',
+      'http://localhost:3000',
+      'https://atalayas-egm-alicante-futura-front-end.vercel.app',
+      /\.vercel\.app$/,
+    ],
     methods: 'GET,HEAD,PUT,PATCH,POST,DELETE,OPTIONS',
     credentials: true,
   });
