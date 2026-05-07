@@ -32,32 +32,36 @@ export class OnboardingService {
           },
         });
 
-        // 2. Upsert de las Tareas (en lugar de delete + create)
-        if (step.tasks) {
-          for (const task of step.tasks) {
+        // 2. Upsert de las Tareas (Corregido para manejar objetos)
+        if (step.tasks && Array.isArray(step.tasks)) {
+          for (const taskData of step.tasks) {
+            // taskData es ahora { label: string, linkAction: string }
             await tx.onboardingTask.upsert({
               where: {
                 stepId_label: {
                   stepId: updatedStep.id,
-                  label: task.label,
+                  label: taskData.label, // Usamos la propiedad label del objeto
                 },
               },
               update: {
-                linkAction: task.linkAction || null,
-              }, // Si la tarea existe y el nombre es igual, no hacemos nada (mantiene el ID)
+                linkAction: taskData.linkAction, // Actualizamos el link si cambió
+              },
               create: {
-                label: task.label,
-                linkAction: task.linkAction || null,
+                label: taskData.label,
+                linkAction: taskData.linkAction,
                 stepId: updatedStep.id,
               },
             });
           }
 
-          const taskLabels = step.tasks.map((t) => t.label);
+          // 3. Borrar tareas que ya no están en el nuevo plan
+          // Extraemos solo los labels (strings) para que 'notIn' funcione
+          const currentLabels = step.tasks.map((t: any) => t.label);
+
           await tx.onboardingTask.deleteMany({
             where: {
               stepId: updatedStep.id,
-              label: { notIn: taskLabels },
+              label: { notIn: currentLabels },
             },
           });
         }

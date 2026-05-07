@@ -4,5 +4,5 @@ import { ApiProperty } from '@nestjs/swagger';
 export class CompleteManualLessonDto {
   @ApiProperty({ description: 'ID de la lección (Content)' })
   @IsUUID()
-  contentId: string;
+  contentId!: string;
 }

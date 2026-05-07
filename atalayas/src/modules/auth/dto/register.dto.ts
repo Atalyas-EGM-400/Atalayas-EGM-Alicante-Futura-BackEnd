@@ -1,14 +1,14 @@
-import { IsEmail, IsString, IsOptional } from 'class-validator';
+import { IsEmail, IsString, IsOptional, IsNotEmpty } from 'class-validator';
 import { ApiProperty } from '@nestjs/swagger';
 
 export class RegisterDto {
   @ApiProperty({ example: 'user@example.com' })
   @IsEmail()
-  email: string;
+  email!: string;
 
   @ApiProperty({ example: 'password123' })
   @IsString()
-  password: string;
+  password!: string;
 
   @ApiProperty({ example: 'Carlos Pérez', required: false })
   @IsOptional()
@@ -24,4 +24,8 @@ export class RegisterDto {
   @IsOptional()
   @IsString()
   companyId?: string;
+
+  @IsString()
+  @IsNotEmpty({ message: 'El puesto de trabajo es requerido' })
+  jobRole?: string;
 }

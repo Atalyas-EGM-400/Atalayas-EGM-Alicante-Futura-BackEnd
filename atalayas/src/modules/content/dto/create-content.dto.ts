@@ -16,12 +16,20 @@ export class CreateContentDto {
   })
   @IsString()
   @IsNotEmpty()
-  title: string;
+  title!: string;
 
+  @ApiPropertyOptional({
+    description: 'Opciones de IA en formato JSON string',
+    example:
+      '{"generateSummary":true,"generateQuiz":false,"generatePodcast":true}',
+  })
   @IsOptional()
   @IsString()
   options?: string;
 
+  @ApiPropertyOptional({
+    description: 'URL externa si no se sube archivo',
+  })
   @IsOptional()
   @IsString()
   url?: string;
@@ -30,4 +38,17 @@ export class CreateContentDto {
   @IsString()
   @IsOptional()
   imageUrl?: string;
+  @ApiPropertyOptional({ example: 'URL de una imagen de portada' })
+  @IsString()
+  @IsOptional()
+
+  // 🚀 ESTE CAMPO ES PARA QUE SWAGGER MUESTRE EL BOTÓN DE SUBIR ARCHIVO
+  @ApiProperty({ type: 'string', format: 'binary', required: false })
+  @IsOptional()
+  file?: any;
+
+  @ApiPropertyOptional({ example: 'URL del video del contenido' })
+  @IsString()
+  @IsOptional()
+  videoUrl?: string;
 }

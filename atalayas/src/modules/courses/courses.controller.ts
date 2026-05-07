@@ -12,7 +12,13 @@ import {
   UploadedFile,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
-import { ApiBearerAuth, ApiBody, ApiConsumes } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiBody,
+  ApiConsumes,
+  ApiOperation,
+  ApiTags,
+} from '@nestjs/swagger';
 
 import { Request } from 'express';
 import { User } from '@prisma/client';
@@ -28,18 +34,20 @@ import { RolesGuard } from '../../common/guards/roles.guard.js';
 import { Roles } from '../../common/decorators/roles.decorator.js';
 import { GenerateAiContentDto } from './dto/generate-ai.dto.js';
 
+@ApiTags('Courses')
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('courses')
 export class CoursesController {
-  constructor(private readonly coursesService: CoursesService) {}
+  constructor(private readonly coursesService: CoursesService) { }
 
   @Post()
   @Roles('ADMIN', 'GENERAL_ADMIN')
-  @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @ApiOperation({ summary: 'Crear un nuevo curso con imagen' })
+  @ApiConsumes('multipart/form-data') // Necesario para procesar archivos
+  @UseInterceptors(FileInterceptor('file')) // El nombre 'file' debe coincidir con el campo del Frontend
   async create(
-    @Body() createCourseDto: CreateCourseDto, // 👈 Ya usamos el DTO oficial
+    @Body() createCourseDto: CreateCourseDto,
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request & { user: User },
   ) {
@@ -47,40 +55,67 @@ export class CoursesController {
   }
 
   @Get()
+  @ApiOperation({
+    summary: 'Obtener todos los cursos según el rol del usuario',
+  })
   async findAll(@Req() req: Request & { user: User }) {
     return await this.coursesService.findAll(req.user);
   }
 
+  @Get('job-roles')
+  @Roles('ADMIN', 'GENERAL_ADMIN')
+  @ApiOperation({
+    summary: 'Obtener todos los roles únicos de empleados para el selector de cursos'
+  })
+  async getUniqueJobRoles() {
+    return await this.coursesService.getUniqueJobRoles();
+  }
+
   @Get(':id')
+  @ApiOperation({ summary: 'Obtener los detalles de un curso por ID' })
   async findOne(@Param('id') id: string, @Req() req: Request & { user: User }) {
     return await this.coursesService.findOne(id, req.user);
   }
 
   @Patch(':id')
-  @Roles('ADMIN', 'GENERAL_ADMIN')
+  @Roles('ADMIN', 'GENERAL_ADMIN') // Protegemos el acceso solo a administradores
+  @ApiOperation({ summary: 'Actualizar un curso (soporta cambio de imagen)' })
+  @ApiConsumes('multipart/form-data') // IMPORTANTE: Para que Swagger permita subir archivo en el Patch
+  @UseInterceptors(FileInterceptor('file'))
   async update(
     @Param('id') id: string,
     @Body() updateCourseDto: UpdateCourseDto,
     @Req() req: Request & { user: User },
+    @UploadedFile() file?: Express.Multer.File,
   ) {
-    return await this.coursesService.update(id, updateCourseDto, req.user);
+    // Pasamos el archivo como cuarto argumento al Service
+    return await this.coursesService.update(
+      id,
+      updateCourseDto,
+      req.user,
+      file,
+    );
   }
 
   @Delete(':id')
   @Roles('ADMIN', 'GENERAL_ADMIN')
+  @ApiOperation({ summary: 'Eliminar un curso y su imagen asociada' })
   async remove(@Param('id') id: string, @Req() req: Request & { user: User }) {
     return await this.coursesService.remove(id, req.user);
   }
 
   @Post(':id/content/ai')
   @Roles('ADMIN', 'GENERAL_ADMIN')
+  @ApiOperation({
+    summary: 'Generar contenido educativo automáticamente con IA',
+  })
   @ApiConsumes('multipart/form-data')
-  @ApiBody({ type: GenerateAiContentDto }) // 👈 1. ¡Swagger dibuja el formulario gracias a esto!
+  @ApiBody({ type: GenerateAiContentDto })
   @UseInterceptors(FileInterceptor('file'))
   async generateAiContent(
     @Param('id') courseId: string,
-    @Body('title') title: string, // 👈 2. Recogemos el dato suelto (bypasseando el validador estricto)
-    @Body('order') order: string, // 👈 3. Recogemos el dato suelto
+    @Body('title') title: string,
+    @Body('order') order: string,
     @UploadedFile() file: Express.Multer.File,
     @Req() req: Request & { user: User },
   ) {

@@ -1,5 +1,6 @@
 import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { v4 as uuidv4 } from 'uuid';
 import 'multer';
 
 @Injectable()
@@ -92,6 +93,43 @@ export class StorageService {
       }
       throw new InternalServerErrorException(
         'Fallo desconocido al borrar el archivo',
+      );
+    }
+  }
+
+  async uploadBuffer(
+    buffer: Buffer,
+    originalName: string,
+    mimetype: string,
+  ): Promise<string> {
+    try {
+      // Creamos un nombre único para evitar colisiones en el bucket
+      const fileExt = originalName.split('.').pop() || 'png';
+      const uniqueName = `ai-generated/${Date.now()}-${uuidv4()}.${fileExt}`;
+
+      // Reutilizamos la lógica con el bucket 'uploads'
+      const { data, error } = await this.supabase.storage
+        .from('uploads') // Asegúrate de que este bucket existe y es público
+        .upload(uniqueName, buffer, {
+          contentType: mimetype,
+          upsert: false, // No sobreescritos, siempre nombres nuevos
+        });
+
+      if (error) {
+        throw new InternalServerErrorException(
+          `Supabase upload error: ${error.message}`,
+        );
+      }
+
+      const { data: publicUrlData } = this.supabase.storage
+        .from('uploads')
+        .getPublicUrl(data.path);
+
+      return publicUrlData.publicUrl;
+    } catch (error: unknown) {
+      const message = error instanceof Error ? error.message : 'Unknown error';
+      throw new InternalServerErrorException(
+        `Fallo al subir buffer generado: ${message}`,
       );
     }
   }

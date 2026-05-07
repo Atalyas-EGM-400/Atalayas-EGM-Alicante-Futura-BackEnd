@@ -37,7 +37,18 @@ export class CompanyService {
       );
     }
 
-    return this.prisma.company.findMany();
+    return this.prisma.company.findMany({
+      include: {
+        _count: {
+          select: {
+            User: true, // Para mostrar el número de empleados,
+          },
+        },
+      },
+      orderBy: {
+        name: 'asc', // Opcional: las devuelve ordenadas alfabéticamente
+      },
+    });
   }
 
   async findOne(id: string, requestUser: User) {

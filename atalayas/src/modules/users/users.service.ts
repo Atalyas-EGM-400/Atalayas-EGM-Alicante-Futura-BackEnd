@@ -14,7 +14,7 @@ export class UsersService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly authService: AuthService,
-  ) {}
+  ) { }
 
   async create(createUserDto: CreateUserDto, requestUser: User) {
     console.log('--- NUEVA CREACIÓN ---');
@@ -64,6 +64,7 @@ export class UsersService {
       name: createUserDto.name,
       role: finalRole,
       companyId: finalCompanyId,
+      jobRole: createUserDto.jobRole,
     });
     // Retornamos la password provisional SOLO UNA VEZ para que el admin la vea
     return {
@@ -141,5 +142,21 @@ export class UsersService {
       where: { id: userId },
       data: { onboardingDone: true },
     });
+  }
+
+  // 🔥 NUEVO MÉTODO: Obtener roles únicos de todos los empleados
+  async getUniqueJobRoles() {
+    const users = await this.prismaService.user.findMany({
+      where: {
+        role: 'EMPLOYEE', // Solo empleados, no admins
+      },
+      select: { jobRole: true },
+      distinct: ['jobRole'],
+    });
+
+    // Filtramos manualmente los que son null o vacíos
+    return users
+      .map(u => u.jobRole)
+      .filter((role): role is string => role !== null && role !== undefined && role.trim() !== '');
   }
 }

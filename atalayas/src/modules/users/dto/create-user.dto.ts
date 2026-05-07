@@ -13,16 +13,16 @@ import { Transform } from 'class-transformer';
 export class CreateUserDto {
   @ApiProperty({ example: 'ejemplo@ejemplo.com' })
   @IsEmail()
-  email: string;
+  email!: string;
 
   @ApiProperty({ example: 'Nombre del usuario' })
   @IsString()
-  name: string;
+  name!: string;
 
   @IsString()
   @IsNotEmpty()
   @MinLength(4, { message: 'La contraseña debe tener al menos 4 caracteres' })
-  password: string;
+  password!: string;
 
   @ApiProperty({ required: false, example: '' })
   @IsUUID()
@@ -40,4 +40,12 @@ export class CreateUserDto {
   @IsEnum(Role)
   @IsOptional()
   role?: Role;
+
+  @ApiProperty({
+    example: 'Almacén',
+    description: 'Puesto específico de trabajo',
+  })
+  @IsString()
+  @IsNotEmpty({ message: 'El puesto de trabajo (jobRole) es obligatorio' })
+  jobRole!: string;
 }

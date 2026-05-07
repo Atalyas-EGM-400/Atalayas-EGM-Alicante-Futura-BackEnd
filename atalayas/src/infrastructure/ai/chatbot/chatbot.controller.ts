@@ -20,10 +20,10 @@ import { Type } from 'class-transformer';
 
 class MessageDto {
   @IsIn(['user', 'assistant'])
-  role: 'user' | 'assistant';
+  role!: 'user' | 'assistant';
 
   @IsString()
-  content: string;
+  content!: string;
 }
 
 class ChatDto {
@@ -31,7 +31,7 @@ class ChatDto {
   @ArrayMaxSize(50) // Evitar historials infinitos
   @ValidateNested({ each: true })
   @Type(() => MessageDto)
-  messages: MessageDto[];
+  messages!: MessageDto[];
 }
 
 @Controller('chatbot')
