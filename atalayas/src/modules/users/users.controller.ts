@@ -22,7 +22,7 @@ import { Req } from '@nestjs/common';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('users')
 export class UsersController {
-  constructor(private readonly usersService: UsersService) { }
+  constructor(private readonly usersService: UsersService) {}
 
   @Post()
   @Roles('ADMIN', 'GENERAL_ADMIN')
@@ -33,6 +33,12 @@ export class UsersController {
   @Get()
   async findAll(@Req() request: Request) {
     return await this.usersService.findAll(request['user']);
+  }
+
+  @Patch('me/onboarding-done')
+  @UseGuards(AuthGuard)
+  async markOnboardingDone(@Request() req: any) {
+    return this.usersService.markOnboardingDone(req.user.id);
   }
 
   // 🔥 NUEVO ENDPOINT: Obtener roles únicos de empleados
@@ -61,11 +67,5 @@ export class UsersController {
   @Roles('ADMIN', 'GENERAL_ADMIN')
   async remove(@Param('id') id: string, @Req() request: Request) {
     return await this.usersService.remove(id, request['user']);
-  }
-
-  @Patch('me/onboarding-done')
-  @UseGuards(AuthGuard)
-  async markOnboardingDone(@Request() req: any) {
-    return this.usersService.markOnboardingDone(req.user.id);
   }
 }
