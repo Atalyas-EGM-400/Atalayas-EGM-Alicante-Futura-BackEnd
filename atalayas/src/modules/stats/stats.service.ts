@@ -91,9 +91,9 @@ export class StatsService {
         },
         orderBy: { Enrollment: { _count: 'desc' } },
       }),
-      this.prisma.enrollment.aggregate({
-        _avg: { progress: true },
+      this.prisma.enrollment.findMany({
         where: enrollmentFilter,
+        select: { progress: true },
       }),
       // Métricas de Onboarding (Usuarios con onboardingDone: true)
       this.prisma.user.count({
@@ -143,7 +143,15 @@ export class StatsService {
           totalEnrollments > 0
             ? Math.round((completedEnrollments / totalEnrollments) * 100)
             : 0,
-        avgProgress: Math.round(progressAggregate._avg.progress ?? 0),
+        avgProgress:
+          totalEmployees > 0
+            ? Math.round(
+                (progressAggregate as { progress: number | null }[]).reduce(
+                  (sum, e) => sum + (e.progress ?? 0),
+                  0,
+                ) / totalEmployees,
+              )
+            : 0,
         totalDocuments,
         totalServices,
         pendingRequests,

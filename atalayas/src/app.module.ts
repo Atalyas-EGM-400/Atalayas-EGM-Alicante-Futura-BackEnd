@@ -18,6 +18,7 @@ import { OnboardingModule } from './modules/onboarding/onboarding.module';
 import { StatsModule } from './modules/stats/stats.module';
 import { AnnouncementModule } from './modules/announcement/announcement.module';
 import { SuggestionsModule } from './modules/suggestions/suggestions.module';
+import { ActivityModule } from './modules/activity/activity.module';
 
 @Module({
   imports: [
@@ -52,6 +53,7 @@ import { SuggestionsModule } from './modules/suggestions/suggestions.module';
     StatsModule,
     AnnouncementModule,
     SuggestionsModule,
+    ActivityModule,
   ],
   controllers: [],
   providers: [],
