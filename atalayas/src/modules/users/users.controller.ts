@@ -17,6 +17,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { ApiBearerAuth } from '@nestjs/swagger';
 import { Request } from '@nestjs/common';
 import { Req } from '@nestjs/common';
+import { ParseUUIDPipe } from '@nestjs/common';
 
 @ApiBearerAuth()
 @UseGuards(AuthGuard, RolesGuard)
@@ -49,8 +50,10 @@ export class UsersController {
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string, @Req() request: Request) {
-    return await this.usersService.findOne(id, request['user']);
+  async findOne(@Param('id', new ParseUUIDPipe()) id: string, @Req() req) {
+    // Si 'id' es 'onboarding', esto devolverá un 400 automáticamente
+    // y no llegará a romper Prisma.
+    return this.usersService.findOne(id, req.user);
   }
 
   @Patch(':id')
