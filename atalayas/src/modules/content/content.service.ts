@@ -85,14 +85,19 @@ export class ContentService {
         options.generateLab
       ) {
         const rawText = await this.aiService.extractTextFromPdf(file.buffer);
-        const tasks: Promise<any>[] = [];
+        const tasks: Promise<void>[] = [];
 
         // Tarea: RESUMEN e IMAGEN (Agrupadas)
         if (options.generateSummary) {
           tasks.push(
             this.aiService
               .generateSummary(rawText)
-              .then((res) => (summary = res)),
+              .then((res) => {
+                summary = res;
+              })
+              .catch((err) =>
+                console.error('[AI-Summary] Error:', err.message),
+              ),
           );
         }
 
@@ -100,41 +105,35 @@ export class ContentService {
           tasks.push(
             this.aiService
               .generateImage(rawText)
-              .then((res) => (imageUrl = res)),
+              .then((res) => {
+                imageUrl = res;
+              })
+              .catch((err) => console.error('[AI-Image] Error:', err.message)),
           );
         }
 
-        // Tarea: VÍDEO (Ahora es independiente del resumen)
         if (options.generateVideo) {
-          console.log('[AI-Video] Iniciando proceso de búsqueda en Pexels...');
           tasks.push(
             this.aiService
               .generateVideo(rawText)
               .then((res) => {
-                if (res) {
-                  console.log('[AI-Video] URL recibida con éxito:', res);
-                  videoUrl = res;
-                }
+                if (res) videoUrl = res;
               })
-              .catch((err) => {
-                console.error(
-                  '[AI-Video] Error en tarea de vídeo:',
-                  err.message,
-                );
-              }),
+              .catch((err) => console.error('[AI-Video] Error:', err.message)),
           );
         }
 
-        // Tarea: QUIZ
         if (options.generateQuiz) {
           tasks.push(
             this.aiService
               .generateQuizFromText(rawText)
-              .then((res) => (quizData = res)),
+              .then((res) => {
+                quizData = res;
+              })
+              .catch((err) => console.error('[AI-Quiz] Error:', err.message)),
           );
         }
 
-        // Tarea: PODCAST
         if (options.generatePodcast) {
           tasks.push(
             (async () => {
@@ -146,7 +145,9 @@ export class ContentService {
                 'audio/mpeg',
               );
               podcastData = { url: audioUrl, script };
-            })(),
+            })().catch((err) =>
+              console.error('[AI-Podcast] Error:', err.message),
+            ),
           );
         }
 
@@ -154,13 +155,15 @@ export class ContentService {
           tasks.push(
             this.aiService
               .generatePracticeLab(rawText)
-              .then((res) => (labData = res))
+              .then((res) => {
+                labData = res;
+              })
               .catch((err) => console.error('[AI-Lab] Error:', err.message)),
           );
         }
 
         // Esperamos a todas las IAs
-        await Promise.all(tasks);
+        await Promise.allSettled(tasks);
       }
     }
 

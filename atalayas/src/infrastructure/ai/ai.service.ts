@@ -118,14 +118,14 @@ export class AiService {
 
   async generatePodcast(text: string): Promise<PodcastResult> {
     try {
-      // 1. Generar guion ameno
+      // 1. Generar guion con Groq
       const completion = await this.aiClient.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [
           {
             role: 'system',
             content:
-              'Eres un locutor de podcast. Resume el texto de forma amena y directa. Máximo 2 párrafos. No incluyas acotaciones.',
+              'Eres un locutor de podcast. Resume el texto de forma amena y directa. Máximo 2 párrafos. No incluyas acotaciones ni etiquetas de voz.',
           },
           { role: 'user', content: text },
         ],
@@ -134,20 +134,30 @@ export class AiService {
       const rawScript = completion.choices[0].message.content || '';
       const cleanScript = rawScript.replace(/\*\*|__|#+|\[.*?\]/g, '').trim();
 
-      // 2. Generar audio con ElevenLabs (URL corregida)
+      if (!cleanScript) {
+        throw new Error('El guion generado está vacío.');
+      }
+
+      // 2. Generar audio con ElevenLabs (URL CORREGIDA CON /stream)
+      const voiceId = 'EXAVITQu4vr4xnSDxMaL';
       const audioResponse = await axios.post(
-        `https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL`,
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, // <--- /stream es vital para recibir el flujo de audio
         {
           text: cleanScript,
           model_id: 'eleven_multilingual_v2',
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+          },
         },
         {
           headers: {
             'xi-api-key': process.env.ELEVENLABS_API_KEY,
             'Content-Type': 'application/json',
+            accept: 'audio/mpeg',
           },
           responseType: 'arraybuffer',
+          timeout: 60000, // Aumentamos a 60s por si la generación es lenta
         },
       );
 
@@ -156,14 +166,29 @@ export class AiService {
         audioBuffer: Buffer.from(audioResponse.data as ArrayBuffer),
       };
     } catch (error: any) {
-      console.error('🚨 Error en Podcast Pipeline:', error);
+      // IMPORTANTE: Al usar arraybuffer, si ElevenLabs da error, el mensaje viene en el buffer
+      let errorMessage = error.message;
+      if (error.response?.data) {
+        errorMessage = Buffer.from(error.response.data).toString();
+      }
 
-      if (axios.isAxiosError(error) && error.response?.status === 402) {
-        throw new InternalServerErrorException('Cuota de ElevenLabs agotada.');
+      console.error('🚨 Error en Podcast Pipeline:', errorMessage);
+
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 402) {
+          throw new InternalServerErrorException(
+            'Cuota de ElevenLabs agotada o plan insuficiente.',
+          );
+        }
+        if (error.response?.status === 401) {
+          throw new InternalServerErrorException(
+            'API Key de ElevenLabs inválida.',
+          );
+        }
       }
 
       throw new InternalServerErrorException(
-        'Error al generar contenido de audio.',
+        `Error al generar contenido de audio: ${errorMessage}`,
       );
     }
   }
