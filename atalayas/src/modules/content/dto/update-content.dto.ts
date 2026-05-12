@@ -40,4 +40,9 @@ export class UpdateContentDto extends PartialType(CreateContentDto) {
   @IsString()
   @IsOptional()
   imageUrl?: string;
+
+  @ApiPropertyOptional({ example: 'https://supabase.co/.../presentation.pptx' })
+  @IsString()
+  @IsOptional()
+  presentationUrl?: string;
 }

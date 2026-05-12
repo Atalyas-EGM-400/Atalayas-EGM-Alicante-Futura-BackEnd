@@ -50,6 +50,7 @@ export class ContentService {
       generateImage: false,
       generateVideo: false,
       generateLab: false,
+      generatePresentation: false,
     };
 
     try {
@@ -70,6 +71,7 @@ export class ContentService {
     let podcastData: any = null;
     let quizData: any = null;
     let labData: any = null;
+    let presentationUrl: string | null = null;
 
     // 3. Procesamiento principal
     if (file) {
@@ -82,7 +84,8 @@ export class ContentService {
         options.generatePodcast ||
         options.generateImage ||
         options.generateVideo ||
-        options.generateLab
+        options.generateLab ||
+        options.generatePresentation
       ) {
         const rawText = await this.aiService.extractTextFromPdf(file.buffer);
         const tasks: Promise<void>[] = [];
@@ -162,6 +165,23 @@ export class ContentService {
           );
         }
 
+        if (options.generatePresentation) {
+          tasks.push(
+            this.aiService
+              .generatePresentation(rawText)
+              .then(async (buffer) => {
+                presentationUrl = await this.storageService.uploadBuffer(
+                  buffer,
+                  `presentation-${Date.now()}.pptx`,
+                  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                );
+              })
+              .catch((err) =>
+                console.error('[AI-Presentation] Error:', err.message),
+              ),
+          );
+        }
+
         // Esperamos a todas las IAs
         await Promise.allSettled(tasks);
       }
@@ -186,6 +206,7 @@ export class ContentService {
         quiz: quizData as any,
         podcast: podcastData as any,
         practiceLab: labData as any,
+        presentationUrl,
         order: nextOrder,
       },
     });
