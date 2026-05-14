@@ -11,6 +11,7 @@ import { AiService } from '../../infrastructure/ai/ai.service';
 import { StorageService } from '../../infrastructure/storage/storage.service';
 import { generate } from 'rxjs';
 import { EnrollmentService } from '../enrollment/enrollment.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ContentService {
@@ -50,6 +51,7 @@ export class ContentService {
       generateImage: false,
       generateVideo: false,
       generateLab: false,
+      generatePresentation: false,
     };
 
     try {
@@ -70,6 +72,7 @@ export class ContentService {
     let podcastData: any = null;
     let quizData: any = null;
     let labData: any = null;
+    let presentationUrl: string | null = null;
 
     // 3. Procesamiento principal
     if (file) {
@@ -82,7 +85,8 @@ export class ContentService {
         options.generatePodcast ||
         options.generateImage ||
         options.generateVideo ||
-        options.generateLab
+        options.generateLab ||
+        options.generatePresentation
       ) {
         const rawText = await this.aiService.extractTextFromPdf(file.buffer);
         const tasks: Promise<void>[] = [];
@@ -162,6 +166,23 @@ export class ContentService {
           );
         }
 
+        if (options.generatePresentation) {
+          tasks.push(
+            this.aiService
+              .generatePresentation(rawText)
+              .then(async (buffer) => {
+                presentationUrl = await this.storageService.uploadBuffer(
+                  buffer,
+                  `presentation-${Date.now()}.pptx`,
+                  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+                );
+              })
+              .catch((err) =>
+                console.error('[AI-Presentation] Error:', err.message),
+              ),
+          );
+        }
+
         // Esperamos a todas las IAs
         await Promise.allSettled(tasks);
       }
@@ -183,9 +204,74 @@ export class ContentService {
         summary,
         imageUrl,
         videoUrl,
-        quiz: quizData as any,
-        podcast: podcastData as any,
-        practiceLab: labData as any,
+        quiz: quizData || undefined,
+        podcast: podcastData || undefined,
+        practiceLab: labData || undefined,
+        presentationUrl,
+        order: nextOrder,
+      },
+    });
+  }
+
+  // Método para subir archivos (reutilizable)
+  async uploadFile(file: Express.Multer.File): Promise<string> {
+    return await this.storageService.uploadFile(file);
+  }
+
+  // NUEVO MÉTODO: Creación manual (solo texto y URLs, sin IA)
+  async createManual(
+    data: {
+      title: string;
+      summary: string;
+      imageUrl: string | null;
+      videoUrl: string | null;
+      presentationUrl: string | null;
+      url: string | null;
+    },
+    requestUser: User,
+    courseId: string,
+  ) {
+    // 1. Validar permisos
+    if (requestUser.role === 'EMPLOYEE' || requestUser.role === 'PUBLIC') {
+      throw new ForbiddenException('No tienes permisos para crear contenido');
+    }
+
+    // 2. Verificar que el curso existe
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+    });
+    if (!course) throw new NotFoundException('El curso no existe');
+
+    // 3. Verificar permisos específicos según el rol
+    if (requestUser.role === 'ADMIN') {
+      // Si es ADMIN de empresa, verificar que el curso pertenece a su empresa
+      if (course.companyId !== requestUser.companyId) {
+        throw new ForbiddenException(
+          'No tienes permisos para crear contenido en este curso',
+        );
+      }
+    }
+
+    // 4. Calcular orden correlativo
+    const lastContent = await this.prisma.content.findFirst({
+      where: { courseId },
+      orderBy: { order: 'desc' },
+    });
+    const nextOrder = lastContent ? lastContent.order + 1 : 1;
+
+    // 5. Crear el contenido manualmente
+    return this.prisma.content.create({
+      data: {
+        title: data.title,
+        courseId,
+        summary: data.summary || '',
+        imageUrl: data.imageUrl || null,
+        videoUrl: data.videoUrl || null,
+        presentationUrl: data.presentationUrl || null,
+        url: data.url || null,
+        quiz: undefined,
+        podcast: undefined,
+        practiceLab: undefined,
         order: nextOrder,
       },
     });

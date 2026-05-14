@@ -6,6 +6,7 @@ import {
   UploadedFile,
   UseInterceptors,
   HttpCode,
+  Res,
 } from '@nestjs/common';
 import { FileInterceptor } from '@nestjs/platform-express';
 import {
@@ -115,5 +116,36 @@ export class AiController {
       message: 'Configuración de laboratorio generada con éxito',
       data: labConfig,
     };
+  }
+
+  @Post('test-presentation')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Genera una presentación PowerPoint a partir de un PDF',
+  })
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({
+    schema: {
+      type: 'object',
+      properties: {
+        file: { type: 'string', format: 'binary' },
+      },
+    },
+  })
+  @UseInterceptors(FileInterceptor('file'))
+  async testPresentation(
+    @UploadedFile() file: Express.Multer.File,
+    @Res() res: import('express').Response,
+  ) {
+    const rawText = await this.aiService.extractTextFromPdf(file.buffer);
+    const pptxBuffer = await this.aiService.generatePresentation(rawText);
+
+    res.set({
+      'Content-Type':
+        'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+      'Content-Disposition': `attachment; filename="presentation-${Date.now()}.pptx"`,
+      'Content-Length': pptxBuffer.length,
+    });
+    res.send(pptxBuffer);
   }
 }

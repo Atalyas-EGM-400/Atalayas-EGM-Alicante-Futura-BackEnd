@@ -9,9 +9,9 @@ import {
   UseGuards,
   Req,
   UseInterceptors,
-  UploadedFile,
+  UploadedFiles,
 } from '@nestjs/common';
-import { FileInterceptor } from '@nestjs/platform-express';
+import { FileFieldsInterceptor } from '@nestjs/platform-express';
 import {
   ApiBearerAuth,
   ApiConsumes,
@@ -33,20 +33,21 @@ import { Roles } from '../../common/decorators/roles.decorator';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('courses')
 export class ContentController {
-  constructor(private readonly contentService: ContentService) { }
+  constructor(private readonly contentService: ContentService) {  }
 
-  // 1. CREAR CONTENIDO
+  // 1. CREAR CONTENIDO CON IA
   @Post(':courseId/content')
   @Roles('ADMIN', 'GENERAL_ADMIN')
-  @ApiOperation({ summary: 'Crear contenido manual o con IA para un curso' })
+  @ApiOperation({ summary: 'Crear contenido con IA para un curso' })
   @ApiConsumes('multipart/form-data')
-  @UseInterceptors(FileInterceptor('file'))
+  @UseInterceptors(FileFieldsInterceptor([{ name: 'file', maxCount: 1 }]))
   async create(
     @Param('courseId') courseId: string,
     @Body() createContentDto: CreateContentDto,
     @Req() req: Request & { user: User },
-    @UploadedFile() file?: Express.Multer.File,
+    @UploadedFiles() files: { file?: Express.Multer.File[] },
   ) {
+    const file = files.file ? files.file[0] : undefined;
     return await this.contentService.create(
       createContentDto,
       req.user,
@@ -55,8 +56,74 @@ export class ContentController {
     );
   }
 
-  // 2. OBTENER TODO EL CONTENIDO DE UN CURSO
-  @Get(':courseId/content') // 👈 Ruta corregida: GET /courses/ID-CURSO/content
+  // 2. CREAR CONTENIDO MANUAL (con múltiples archivos: PDF, imagen, video, presentación)
+  @Post(':courseId/content/manual')
+  @Roles('ADMIN', 'GENERAL_ADMIN')
+  @ApiOperation({ summary: 'Crear contenido manualmente (con PDF, imagen, video, presentación o URL)' })
+  @ApiConsumes('multipart/form-data')
+  @UseInterceptors(FileFieldsInterceptor([
+    { name: 'file', maxCount: 1 },           // PDF del documento
+    { name: 'imageFile', maxCount: 1 },      // Imagen
+    { name: 'videoFile', maxCount: 1 },      // Video
+    { name: 'presentationFile', maxCount: 1 }, // Presentación
+  ]))
+  async createManual(
+    @Param('courseId') courseId: string,
+    @UploadedFiles() files: {
+      file?: Express.Multer.File[],
+      imageFile?: Express.Multer.File[],
+      videoFile?: Express.Multer.File[],
+      presentationFile?: Express.Multer.File[],
+    },
+    @Body('title') title: string,
+    @Body('summary') summary: string,
+    @Body('imageUrl') imageUrl: string,
+    @Body('videoUrl') videoUrl: string,
+    @Body('presentationUrl') presentationUrl: string,
+    @Body('url') url: string,
+    @Req() req: Request & { user: User },
+  ) {
+    let documentUrl: string | null = url || null;
+    let finalImageUrl: string | null = imageUrl || null;
+    let finalVideoUrl: string | null = videoUrl || null;
+    let finalPresentationUrl: string | null = presentationUrl || null;
+
+    // Si se subió un archivo PDF
+    if (files.file && files.file[0]) {
+      documentUrl = await this.contentService.uploadFile(files.file[0]);
+    }
+
+    // Si se subió un archivo de imagen
+    if (files.imageFile && files.imageFile[0]) {
+      finalImageUrl = await this.contentService.uploadFile(files.imageFile[0]);
+    }
+
+    // Si se subió un archivo de video
+    if (files.videoFile && files.videoFile[0]) {
+      finalVideoUrl = await this.contentService.uploadFile(files.videoFile[0]);
+    }
+
+    // Si se subió un archivo de presentación
+    if (files.presentationFile && files.presentationFile[0]) {
+      finalPresentationUrl = await this.contentService.uploadFile(files.presentationFile[0]);
+    }
+
+    return this.contentService.createManual(
+      {
+        title,
+        summary,
+        imageUrl: finalImageUrl,
+        videoUrl: finalVideoUrl,
+        presentationUrl: finalPresentationUrl,
+        url: documentUrl,
+      },
+      req.user,
+      courseId,
+    );
+  }
+
+  // 3. OBTENER TODO EL CONTENIDO DE UN CURSO
+  @Get(':courseId/content')
   async findAll(
     @Param('courseId') courseId: string,
     @Req() req: Request & { user: User },
@@ -64,18 +131,17 @@ export class ContentController {
     return await this.contentService.findAll(req.user, courseId);
   }
 
-  // 3. OBTENER UNA LECCIÓN ESPECÍFICA (El error 404 estaba aquí)
-  @Get(':courseId/content/:contentId') // 👈 Esta es la ruta que llama tu frontend
+  // 4. OBTENER UNA LECCIÓN ESPECÍFICA
+  @Get(':courseId/content/:contentId')
   async findOne(
     @Param('courseId') courseId: string,
     @Param('contentId') contentId: string,
     @Req() req: Request & { user: User },
   ) {
-    // Usamos el contentId para buscar la lección
     return await this.contentService.findOne(contentId, req.user);
   }
 
-  // 4. ACTUALIZAR (Ajustado para seguir la misma lógica de ruta)
+  // 5. ACTUALIZAR CONTENIDO
   @Patch(':courseId/content/:contentId')
   @Roles('ADMIN', 'GENERAL_ADMIN')
   async update(
@@ -90,7 +156,7 @@ export class ContentController {
     );
   }
 
-  // 5. ELIMINAR
+  // 6. ELIMINAR CONTENIDO
   @Delete(':courseId/content/:contentId')
   @Roles('ADMIN', 'GENERAL_ADMIN')
   async remove(
@@ -100,7 +166,8 @@ export class ContentController {
     return await this.contentService.remove(contentId, req.user);
   }
 
-  @Post(':courseId/content/:contentId/complete') // Ajustada para seguir tu patrón de rutas
+  // 7. COMPLETAR UNIDAD
+  @Post(':courseId/content/:contentId/complete')
   @ApiOperation({ summary: 'Marcar unidad como completada al aprobar el quiz' })
   async complete(
     @Param('contentId') contentId: string,
@@ -108,28 +175,5 @@ export class ContentController {
     @Req() req: Request & { user: User },
   ) {
     return await this.contentService.completeQuiz(contentId, req.user, body);
-  }
-
-  @Post(':courseId/content/:contentId/complete-lab')
-  @ApiOperation({ summary: 'Completar práctica interactiva' })
-  async completeLab(
-    @Param('contentId') contentId: string,
-    @Req() req: Request & { user: User },
-  ) {
-    return await this.contentService.completeLab(
-      contentId,
-      req.user,
-    );
-  }
-  @Post(':courseId/content/:contentId/view')
-  @ApiOperation({ summary: 'Marcar contenido como visto' })
-  async markAsViewed(
-    @Param('contentId') contentId: string,
-    @Req() req: Request & { user: User },
-  ) {
-    return await this.contentService.markAsViewed(
-      contentId,
-      req.user,
-    );
   }
 }
