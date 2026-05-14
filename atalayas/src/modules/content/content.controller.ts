@@ -33,7 +33,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('courses')
 export class ContentController {
-  constructor(private readonly contentService: ContentService) {}
+  constructor(private readonly contentService: ContentService) { }
 
   // 1. CREAR CONTENIDO
   @Post(':courseId/content')
@@ -108,5 +108,28 @@ export class ContentController {
     @Req() req: Request & { user: User },
   ) {
     return await this.contentService.completeQuiz(contentId, req.user, body);
+  }
+
+  @Post(':courseId/content/:contentId/complete-lab')
+  @ApiOperation({ summary: 'Completar práctica interactiva' })
+  async completeLab(
+    @Param('contentId') contentId: string,
+    @Req() req: Request & { user: User },
+  ) {
+    return await this.contentService.completeLab(
+      contentId,
+      req.user,
+    );
+  }
+  @Post(':courseId/content/:contentId/view')
+  @ApiOperation({ summary: 'Marcar contenido como visto' })
+  async markAsViewed(
+    @Param('contentId') contentId: string,
+    @Req() req: Request & { user: User },
+  ) {
+    return await this.contentService.markAsViewed(
+      contentId,
+      req.user,
+    );
   }
 }

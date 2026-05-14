@@ -19,7 +19,7 @@ export class ContentService {
     private readonly aiService: AiService,
     private readonly storageService: StorageService,
     private readonly enrollmentService: EnrollmentService,
-  ) {}
+  ) { }
 
   async create(
     createContentDto: CreateContentDto,
@@ -192,25 +192,62 @@ export class ContentService {
   }
 
   async findAll(requestUser: User, courseId: string) {
-    const course = await this.prisma.course.findUnique({
-      where: { id: courseId },
-    });
-    if (!course) {
-      throw new NotFoundException(`El curso con ID ${courseId} no existe.`);
-    }
-    if (!course) throw new NotFoundException(`Curso no encontrado`);
-
-    if (
-      requestUser.role !== 'GENERAL_ADMIN' &&
-      course.companyId !== requestUser.companyId
-    ) {
-      throw new ForbiddenException(`No tienes acceso al curso.`);
-    }
-    return this.prisma.content.findMany({
+    const contents = await this.prisma.content.findMany({
       where: { courseId },
       orderBy: { order: 'asc' },
-      include: { Course: true }, // Traemos la información del curso al que pertenece cada contenido
+      include: {
+        Course: true,
+        userProgresses: {
+          where: {
+            userId: requestUser.id,
+          },
+        },
+      },
     });
+
+    return contents.map((content) => {
+      const progress = content.userProgresses[0];
+
+      const quizData = content.quiz as any;
+      const labData = content.practiceLab as any;
+
+      const hasQuiz = Boolean(
+        quizData &&
+        quizData !== 'null' &&
+        (
+          (Array.isArray(quizData) && quizData.length > 0) ||
+          (
+            typeof quizData === 'object' &&
+            quizData.questions &&
+            Array.isArray(quizData.questions) &&
+            quizData.questions.length > 0
+          )
+        )
+      );
+
+      const hasLab = Boolean(
+        labData &&
+        labData !== 'null'
+      );
+
+      const { userProgresses, ...rest } = content;
+
+      return {
+        ...rest,
+
+        hasQuiz,
+        hasLab,
+
+        viewed: progress?.viewed ?? false,
+        quizCompleted: progress?.quizCompleted ?? false,
+        labCompleted: progress?.labCompleted ?? false,
+
+        isCompleted: progress?.isCompleted ?? false,
+
+        completedAt: progress?.completedAt ?? null,
+      };
+    });
+
   }
 
   async findOne(id: string, requestUser: User) {
@@ -247,12 +284,43 @@ export class ContentService {
 
     const { userProgresses, ...rest } = content;
 
+    const progress = userProgresses[0];
+
+    const quizData = content.quiz as any;
+    const labData = content.practiceLab as any;
+
+    const hasQuiz = Boolean(
+      quizData &&
+      quizData !== 'null' &&
+      (
+        (Array.isArray(quizData) && quizData.length > 0) ||
+        (
+          typeof quizData === 'object' &&
+          quizData.questions &&
+          Array.isArray(quizData.questions) &&
+          quizData.questions.length > 0
+        )
+      )
+    );
+
+    const hasLab = Boolean(
+      labData &&
+      labData !== 'null'
+    );
+
     return {
       ...rest,
-      isCompleted:
-        userProgresses.length > 0 ? userProgresses[0].isCompleted : false,
-      completedAt:
-        userProgresses.length > 0 ? userProgresses[0].completedAt : null,
+
+      hasQuiz,
+      hasLab,
+
+      viewed: progress?.viewed ?? false,
+      quizCompleted: progress?.quizCompleted ?? false,
+      labCompleted: progress?.labCompleted ?? false,
+
+      isCompleted: progress?.isCompleted ?? false,
+
+      completedAt: progress?.completedAt ?? null,
     };
   }
 
@@ -303,10 +371,72 @@ export class ContentService {
     return this.prisma.content.delete({ where: { id } });
   }
 
+
+
   async completeQuiz(
     contentId: string,
     requestUser: User,
     data: { score: number; totalQuestions: number },
+  ) {
+    const isPerfectScore = data.score === data.totalQuestions;
+
+    if (!isPerfectScore) {
+      return {
+        success: false,
+        message: 'Quiz no aprobado',
+      };
+    }
+
+    await this.evaluateCompletion(
+      requestUser.id,
+      contentId,
+      'quiz',
+    );
+
+    console.log('QUIZ ENDPOINT HIT');
+    console.log('BODY:', data);
+    console.log('USER:', requestUser);
+    return {
+      success: true,
+    };
+  }
+
+  async completeLab(contentId: string, requestUser: User) {
+    await this.evaluateCompletion(
+
+      requestUser.id,
+      contentId,
+      'lab',
+
+    );
+
+    console.log('LAB ENDPOINT HIT');
+    console.log('USER:', requestUser.id);
+    console.log('CONTENT:', contentId);
+
+    return {
+      success: true,
+    };
+  }
+
+  async markAsViewed(contentId: string, requestUser: User) {
+    await this.evaluateCompletion(
+      requestUser.id,
+      contentId,
+      'view',
+    );
+    console.log('VIEW ENDPOINT HIT');
+    console.log('USER:', requestUser.id);
+    console.log('CONTENT:', contentId);
+    return {
+      success: true,
+    };
+  }
+
+  private async evaluateCompletion(
+    userId: string,
+    contentId: string,
+    action: 'view' | 'quiz' | 'lab',
   ) {
     const content = await this.prisma.content.findUnique({
       where: { id: contentId },
@@ -316,53 +446,112 @@ export class ContentService {
       throw new NotFoundException('Contenido no encontrado');
     }
 
-    const isPerfectScore = data.score === data.totalQuestions;
+    const quizData = content.quiz as any;
+    const labData = content.practiceLab as any;
 
-    await this.ensureUserProgress(requestUser.id, contentId);
+    const hasQuiz = Boolean(
+      quizData &&
+      quizData !== 'null' &&
+      (
+        (Array.isArray(quizData) && quizData.length > 0) ||
+        (
+          typeof quizData === 'object' &&
+          quizData.questions &&
+          Array.isArray(quizData.questions) &&
+          quizData.questions.length > 0
+        )
+      )
+    );
+
+    const hasLab = Boolean(
+      labData &&
+      labData !== 'null'
+    );
 
     const progress = await this.prisma.userProgress.upsert({
       where: {
         userId_contentId: {
-          userId: requestUser.id,
-          contentId: contentId,
+          userId,
+          contentId,
         },
       },
-      update: {
-        isCompleted: isPerfectScore,
-        completedAt: isPerfectScore ? new Date() : undefined,
-      },
+
+      update: {},
       create: {
-        userId: requestUser.id,
-        contentId: contentId,
-        isCompleted: isPerfectScore,
+        userId,
+        contentId,
+        viewed: false,
+        quizCompleted: false,
+        labCompleted: false,
+        isCompleted: false,
+      },
+
+    });
+
+    let viewed = progress.viewed;
+    let quizCompleted = progress.quizCompleted;
+    let labCompleted = progress.labCompleted;
+
+    if (action === 'view') {
+      viewed = true;
+    }
+
+    if (action === 'quiz') {
+      quizCompleted = true;
+    }
+
+    if (action === 'lab') {
+      labCompleted = true;
+    }
+
+    let completed = false;
+
+    // SOLO lectura
+    if (!hasQuiz && !hasLab) {
+      completed = viewed;
+    }
+
+    // lectura + quiz
+    if (hasQuiz && !hasLab) {
+      completed = viewed && quizCompleted;
+    }
+
+    // lectura + lab
+    if (!hasQuiz && hasLab) {
+      completed = viewed && labCompleted;
+    }
+
+    // lectura + quiz + lab
+    if (hasQuiz && hasLab) {
+      completed = viewed && quizCompleted && labCompleted;
+    }
+
+    await this.prisma.userProgress.update({
+      where: {
+        userId_contentId: {
+          userId,
+          contentId,
+        },
+      },
+      data: {
+        viewed,
+        quizCompleted,
+        labCompleted,
+        isCompleted: completed,
+        completedAt:
+          completed && !progress.isCompleted
+            ? new Date()
+            : progress.completedAt,
       },
     });
 
-    if (isPerfectScore) {
+    if (completed) {
       await this.enrollmentService.completeManualLesson(
-        requestUser.id,
+        userId,
         contentId,
       );
     }
 
-    return progress;
-  }
-  private async ensureUserProgress(userId: string, contentId: string) {
-    const exists = await this.prisma.userProgress.findUnique({
-      where: {
-        userId_contentId: { userId, contentId },
-      },
-    });
-
-    if (!exists) {
-      await this.prisma.userProgress.create({
-        data: {
-          userId,
-          contentId,
-          isCompleted: false,
-          lastTime: 0,
-        },
-      });
-    }
+    return completed;
   }
 }
