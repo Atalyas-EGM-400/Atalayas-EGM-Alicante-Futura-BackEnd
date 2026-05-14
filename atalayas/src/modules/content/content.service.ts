@@ -11,6 +11,7 @@ import { AiService } from '../../infrastructure/ai/ai.service';
 import { StorageService } from '../../infrastructure/storage/storage.service';
 import { generate } from 'rxjs';
 import { EnrollmentService } from '../enrollment/enrollment.service';
+import { Prisma } from '@prisma/client';
 
 @Injectable()
 export class ContentService {
@@ -19,7 +20,7 @@ export class ContentService {
     private readonly aiService: AiService,
     private readonly storageService: StorageService,
     private readonly enrollmentService: EnrollmentService,
-  ) {}
+  ) { }
 
   async create(
     createContentDto: CreateContentDto,
@@ -203,10 +204,74 @@ export class ContentService {
         summary,
         imageUrl,
         videoUrl,
-        quiz: quizData as any,
-        podcast: podcastData as any,
-        practiceLab: labData as any,
+        quiz: quizData || undefined,
+        podcast: podcastData || undefined,
+        practiceLab: labData || undefined,
         presentationUrl,
+        order: nextOrder,
+      },
+    });
+  }
+
+  // Método para subir archivos (reutilizable)
+  async uploadFile(file: Express.Multer.File): Promise<string> {
+    return await this.storageService.uploadFile(file);
+  }
+
+  // NUEVO MÉTODO: Creación manual (solo texto y URLs, sin IA)
+  async createManual(
+    data: {
+      title: string;
+      summary: string;
+      imageUrl: string | null;
+      videoUrl: string | null;
+      presentationUrl: string | null;
+      url: string | null;
+    },
+    requestUser: User,
+    courseId: string,
+  ) {
+    // 1. Validar permisos
+    if (requestUser.role === 'EMPLOYEE' || requestUser.role === 'PUBLIC') {
+      throw new ForbiddenException('No tienes permisos para crear contenido');
+    }
+
+    // 2. Verificar que el curso existe
+    const course = await this.prisma.course.findUnique({
+      where: { id: courseId },
+    });
+    if (!course) throw new NotFoundException('El curso no existe');
+
+    // 3. Verificar permisos específicos según el rol
+    if (requestUser.role === 'ADMIN') {
+      // Si es ADMIN de empresa, verificar que el curso pertenece a su empresa
+      if (course.companyId !== requestUser.companyId) {
+        throw new ForbiddenException(
+          'No tienes permisos para crear contenido en este curso',
+        );
+      }
+    }
+
+    // 4. Calcular orden correlativo
+    const lastContent = await this.prisma.content.findFirst({
+      where: { courseId },
+      orderBy: { order: 'desc' },
+    });
+    const nextOrder = lastContent ? lastContent.order + 1 : 1;
+
+    // 5. Crear el contenido manualmente
+    return this.prisma.content.create({
+      data: {
+        title: data.title,
+        courseId,
+        summary: data.summary || '',
+        imageUrl: data.imageUrl || null,
+        videoUrl: data.videoUrl || null,
+        presentationUrl: data.presentationUrl || null,
+        url: data.url || null,
+        quiz: undefined,
+        podcast: undefined,
+        practiceLab: undefined,
         order: nextOrder,
       },
     });
@@ -230,7 +295,7 @@ export class ContentService {
     return this.prisma.content.findMany({
       where: { courseId },
       orderBy: { order: 'asc' },
-      include: { Course: true }, // Traemos la información del curso al que pertenece cada contenido
+      include: { Course: true },
     });
   }
 
@@ -368,6 +433,7 @@ export class ContentService {
 
     return progress;
   }
+
   private async ensureUserProgress(userId: string, contentId: string) {
     const exists = await this.prisma.userProgress.findUnique({
       where: {
