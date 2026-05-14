@@ -20,6 +20,7 @@ import { AnnouncementModule } from './modules/announcement/announcement.module';
 import { SuggestionsModule } from './modules/suggestions/suggestions.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { EventsModule } from './modules/events/events.module';
+import { NotificationsModule } from './modules/notifications/notifications.module';
 
 @Module({
   imports: [
@@ -56,6 +57,7 @@ import { EventsModule } from './modules/events/events.module';
     SuggestionsModule,
     ActivityModule,
     EventsModule,
+    NotificationsModule,
   ],
   controllers: [],
   providers: [],

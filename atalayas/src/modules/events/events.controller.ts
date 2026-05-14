@@ -70,7 +70,7 @@ export class EventsController {
   @Patch(':id')
   @UseGuards(AuthGuard, RolesGuard)
   @Roles('GENERAL_ADMIN', 'ADMIN')
-  @UseInterceptors(FileInterceptor('file')) // o 'image' según tu FormData
+  @UseInterceptors(FileInterceptor('image'))
   async update(
     @Param('id') id: string,
     @Body() updateEventDto: UpdateEventDto,
