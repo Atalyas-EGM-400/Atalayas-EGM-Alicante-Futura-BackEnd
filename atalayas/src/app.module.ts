@@ -19,6 +19,7 @@ import { StatsModule } from './modules/stats/stats.module';
 import { AnnouncementModule } from './modules/announcement/announcement.module';
 import { SuggestionsModule } from './modules/suggestions/suggestions.module';
 import { ActivityModule } from './modules/activity/activity.module';
+import { EventsModule } from './modules/events/events.module';
 
 @Module({
   imports: [
@@ -54,6 +55,7 @@ import { ActivityModule } from './modules/activity/activity.module';
     AnnouncementModule,
     SuggestionsModule,
     ActivityModule,
+    EventsModule,
   ],
   controllers: [],
   providers: [],
