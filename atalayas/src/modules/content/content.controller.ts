@@ -176,4 +176,27 @@ export class ContentController {
   ) {
     return await this.contentService.completeQuiz(contentId, req.user, body);
   }
+
+  @Post(':courseId/content/:contentId/complete-lab')
+  @ApiOperation({ summary: 'Completar práctica interactiva' })
+  async completeLab(
+    @Param('contentId') contentId: string,
+    @Req() req: Request & { user: User },
+  ) {
+    return await this.contentService.completeLab(
+      contentId,
+      req.user,
+    );
+  }
+  @Post(':courseId/content/:contentId/view')
+  @ApiOperation({ summary: 'Marcar contenido como visto' })
+  async markAsViewed(
+    @Param('contentId') contentId: string,
+    @Req() req: Request & { user: User },
+  ) {
+    return await this.contentService.markAsViewed(
+      contentId,
+      req.user,
+    );
+  }
 }
