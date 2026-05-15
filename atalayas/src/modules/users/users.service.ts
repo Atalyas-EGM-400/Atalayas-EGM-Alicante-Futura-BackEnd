@@ -20,12 +20,10 @@ export class UsersService {
     console.log('--- NUEVA CREACIÓN ---');
     console.log('Rol recibido del front:', createUserDto.role);
 
-    // 1. Validación de permisos
     if (requestUser.role === 'EMPLOYEE' || requestUser.role === 'PUBLIC') {
       throw new ForbiddenException('No tienes permisos para crear usuarios');
     }
 
-    // 2. Lógica de Multitenancy y Roles
     let finalCompanyId: string | null;
     let finalRole: Role;
 
@@ -52,12 +50,9 @@ export class UsersService {
       finalRole = (createUserDto.role as Role) || Role.EMPLOYEE;
     }
 
-    // 3. Generación de contraseña temporal
     const password =
       createUserDto.password || Math.random().toString(36).slice(-8);
 
-    // 4. LLAMADA CORREGIDA AL AUTH SERVICE (Error TS2554 arreglado)
-    // Pasamos UN SOLO OBJETO que contenga todo lo que el RegisterDto espera
     const authUser = await this.authService.register({
       email: createUserDto.email,
       password: password,
@@ -66,7 +61,7 @@ export class UsersService {
       companyId: finalCompanyId,
       jobRole: createUserDto.jobRole,
     });
-    // Retornamos la password provisional SOLO UNA VEZ para que el admin la vea
+
     return {
       ...authUser,
       provisionalPassword: createUserDto.password ? undefined : password,
@@ -98,7 +93,6 @@ export class UsersService {
 
     if (!user) throw new NotFoundException(`Usuario no encontrado`);
 
-    // Validación de empresa para el Admin normal
     if (
       requestUser.role === 'ADMIN' &&
       user.companyId !== requestUser.companyId
@@ -144,19 +138,56 @@ export class UsersService {
     });
   }
 
-  // 🔥 NUEVO MÉTODO: Obtener roles únicos de todos los empleados
   async getUniqueJobRoles() {
     const users = await this.prismaService.user.findMany({
-      where: {
-        role: 'EMPLOYEE', // Solo empleados, no admins
-      },
+      where: { role: 'EMPLOYEE' },
       select: { jobRole: true },
       distinct: ['jobRole'],
     });
 
-    // Filtramos manualmente los que son null o vacíos
     return users
-      .map(u => u.jobRole)
-      .filter((role): role is string => role !== null && role !== undefined && role.trim() !== '');
+      .map((u) => u.jobRole)
+      .filter(
+        (role): role is string =>
+          role !== null && role !== undefined && role.trim() !== '',
+      );
+  }
+
+  // ── NUEVO: Dar de baja a un empleado ─────────────────────────────────
+  async deactivateUser(id: string, requestUser: User) {
+    const target = await this.findOne(id, requestUser);
+
+    if (target.id === requestUser.id) {
+      throw new ForbiddenException('No puedes darte de baja a ti mismo');
+    }
+
+    if (target.status === 'INACTIVE') {
+      throw new ForbiddenException('Este empleado ya está dado de baja');
+    }
+
+    return this.prismaService.user.update({
+      where: { id },
+      data: {
+        status: 'INACTIVE',
+        leftAt: new Date(),
+      },
+    });
+  }
+
+  // ── NUEVO: Reactivar un empleado ──────────────────────────────────────
+  async reactivateUser(id: string, requestUser: User) {
+    const target = await this.findOne(id, requestUser);
+
+    if (target.status === 'ACTIVE') {
+      throw new ForbiddenException('Este empleado ya está activo');
+    }
+
+    return this.prismaService.user.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        leftAt: null,
+      },
+    });
   }
 }
