@@ -14,7 +14,7 @@ export class CompanyService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly storageService: StorageService, // 👈 2. Lo inyectamos en el constructor
-  ) {}
+  ) { }
 
   async create(createCompanyDto: CreateCompanyDto, requestUser: User) {
     // 🔒 SEGURIDAD: Solo un súper admin puede dar de alta nuevas empresas
@@ -146,6 +146,46 @@ export class CompanyService {
 
     return this.prisma.company.delete({
       where: { id },
+    });
+  }
+
+  // ── DAR DE BAJA EMPRESA ──────────────────────────────────────────────────
+  async deactivateCompany(id: string) {
+    const company = await this.prisma.company.findUnique({ where: { id } });
+
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+    if (company.status === 'INACTIVE') {
+      throw new ForbiddenException('Esta empresa ya está dada de baja');
+    }
+
+    return this.prisma.company.update({
+      where: { id },
+      data: {
+        status: 'INACTIVE',
+        leftAt: new Date(),
+      },
+    });
+  }
+
+  // ── REACTIVAR EMPRESA ────────────────────────────────────────────────────
+  async reactivateCompany(id: string) {
+    const company = await this.prisma.company.findUnique({ where: { id } });
+
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+    if (company.status === 'ACTIVE') {
+      throw new ForbiddenException('Esta empresa ya está activa');
+    }
+
+    return this.prisma.company.update({
+      where: { id },
+      data: {
+        status: 'ACTIVE',
+        leftAt: null, // Borramos la fecha de baja porque vuelve a estar activa
+      },
     });
   }
 }

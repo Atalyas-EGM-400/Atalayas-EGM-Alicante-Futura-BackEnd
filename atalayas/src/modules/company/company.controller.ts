@@ -27,13 +27,15 @@ import { Request } from 'express';
 // 1. IMPORTAMOS TU PROPIO GUARD
 import { AuthGuard } from '../../common/guards/auth.guard.js';
 import { User } from '@prisma/client';
+import { Roles } from '../../common/decorators/roles.decorator.js';
 
 @ApiTags('Company')
 @ApiBearerAuth()
 @UseGuards(AuthGuard)
 @Controller('company')
 export class CompanyController {
-  constructor(private readonly companiesService: CompanyService) {}
+  // 👇 Aquí está definida como companiesService (con 's')
+  constructor(private readonly companiesService: CompanyService) { }
 
   @Post()
   @ApiOperation({ summary: 'Crear una empresa nueva (Solo General Admin)' })
@@ -91,5 +93,21 @@ export class CompanyController {
   ) {
     const requestUser = req.user;
     return this.companiesService.remove(id, requestUser);
+  }
+
+  // ── DAR DE BAJA ────────────────────────────────────────────────
+  @Patch(':id/deactivate')
+  @Roles('GENERAL_ADMIN') // Solo el Admin General debería poder dar de baja empresas enteras
+  async deactivateCompany(@Param('id', new ParseUUIDPipe()) id: string) {
+    // 👇 Corregido a companiesService 👇
+    return await this.companiesService.deactivateCompany(id);
+  }
+
+  // ── REACTIVAR ──────────────────────────────────────────────────
+  @Patch(':id/reactivate')
+  @Roles('GENERAL_ADMIN')
+  async reactivateCompany(@Param('id', new ParseUUIDPipe()) id: string) {
+    // 👇 Corregido a companiesService 👇
+    return await this.companiesService.reactivateCompany(id);
   }
 }

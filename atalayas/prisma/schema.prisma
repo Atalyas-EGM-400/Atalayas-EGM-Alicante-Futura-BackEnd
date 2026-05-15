@@ -469,6 +469,8 @@ model Company {
   description    String?
   logoUrl        String?
   website        String?
+  status         UserStatus       @default(ACTIVE)
+  leftAt         DateTime?        @db.Timestamptz(6)
   Announcement   Announcement[]
   Course         Course[]
   Document       Document[]
@@ -573,17 +575,17 @@ model Content {
 }
 
 model UserProgress {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String   @db.Uuid
-  contentId   String   @db.Uuid
-  completedAt DateTime @default(now()) @db.Timestamptz(6)
-  viewed        Boolean @default(false)
-  quizCompleted Boolean @default(false)
-  labCompleted  Boolean @default(false)
-  isCompleted Boolean  @default(false)
-  lastTime    Int      @default(0)
-  Content     Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  User        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @db.Uuid
+  contentId     String   @db.Uuid
+  completedAt   DateTime @default(now()) @db.Timestamptz(6)
+  isCompleted   Boolean  @default(false)
+  lastTime      Int      @default(0)
+  labCompleted  Boolean  @default(false)
+  quizCompleted Boolean  @default(false)
+  viewed        Boolean  @default(false)
+  Content       Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  User          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, contentId])
   @@schema("public")
