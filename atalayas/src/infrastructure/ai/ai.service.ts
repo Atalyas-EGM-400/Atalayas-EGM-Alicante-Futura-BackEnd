@@ -3,6 +3,7 @@ import OpenAI from 'openai';
 import axios from 'axios';
 import { extractText } from 'unpdf';
 import { StorageService } from '../storage/storage.service';
+import PptxGenJS from 'pptxgenjs';
 
 type QuizQuestion = {
   question: string;
@@ -118,14 +119,14 @@ export class AiService {
 
   async generatePodcast(text: string): Promise<PodcastResult> {
     try {
-      // 1. Generar guion ameno
+      // 1. Generar guion con Groq
       const completion = await this.aiClient.chat.completions.create({
         model: 'llama-3.3-70b-versatile',
         messages: [
           {
             role: 'system',
             content:
-              'Eres un locutor de podcast. Resume el texto de forma amena y directa. Máximo 2 párrafos. No incluyas acotaciones.',
+              'Eres un locutor de podcast. Resume el texto de forma amena y directa. Máximo 2 párrafos. No incluyas acotaciones ni etiquetas de voz.',
           },
           { role: 'user', content: text },
         ],
@@ -134,20 +135,30 @@ export class AiService {
       const rawScript = completion.choices[0].message.content || '';
       const cleanScript = rawScript.replace(/\*\*|__|#+|\[.*?\]/g, '').trim();
 
-      // 2. Generar audio con ElevenLabs (URL corregida)
+      if (!cleanScript) {
+        throw new Error('El guion generado está vacío.');
+      }
+
+      // 2. Generar audio con ElevenLabs (URL CORREGIDA CON /stream)
+      const voiceId = 'EXAVITQu4vr4xnSDxMaL';
       const audioResponse = await axios.post(
-        `https://api.elevenlabs.io/v1/text-to-speech/EXAVITQu4vr4xnSDxMaL`,
+        `https://api.elevenlabs.io/v1/text-to-speech/${voiceId}/stream`, // <--- /stream es vital para recibir el flujo de audio
         {
           text: cleanScript,
           model_id: 'eleven_multilingual_v2',
-          voice_settings: { stability: 0.5, similarity_boost: 0.75 },
+          voice_settings: {
+            stability: 0.5,
+            similarity_boost: 0.75,
+          },
         },
         {
           headers: {
             'xi-api-key': process.env.ELEVENLABS_API_KEY,
             'Content-Type': 'application/json',
+            accept: 'audio/mpeg',
           },
           responseType: 'arraybuffer',
+          timeout: 60000, // Aumentamos a 60s por si la generación es lenta
         },
       );
 
@@ -156,14 +167,29 @@ export class AiService {
         audioBuffer: Buffer.from(audioResponse.data as ArrayBuffer),
       };
     } catch (error: any) {
-      console.error('🚨 Error en Podcast Pipeline:', error);
+      // IMPORTANTE: Al usar arraybuffer, si ElevenLabs da error, el mensaje viene en el buffer
+      let errorMessage = error.message;
+      if (error.response?.data) {
+        errorMessage = Buffer.from(error.response.data).toString();
+      }
 
-      if (axios.isAxiosError(error) && error.response?.status === 402) {
-        throw new InternalServerErrorException('Cuota de ElevenLabs agotada.');
+      console.error('🚨 Error en Podcast Pipeline:', errorMessage);
+
+      if (axios.isAxiosError(error)) {
+        if (error.response?.status === 402) {
+          throw new InternalServerErrorException(
+            'Cuota de ElevenLabs agotada o plan insuficiente.',
+          );
+        }
+        if (error.response?.status === 401) {
+          throw new InternalServerErrorException(
+            'API Key de ElevenLabs inválida.',
+          );
+        }
       }
 
       throw new InternalServerErrorException(
-        'Error al generar contenido de audio.',
+        `Error al generar contenido de audio: ${errorMessage}`,
       );
     }
   }
@@ -411,5 +437,493 @@ PROHIBIDO: draggables que sean nombres de secciones o categorías genéricas.`,
         dropZones: [],
       };
     }
+  }
+
+  async generatePresentation(text: string): Promise<Buffer> {
+    const completion = await this.aiClient.chat.completions.create({
+      model: 'llama-3.3-70b-versatile',
+      messages: [
+        {
+          role: 'system',
+          content: `Eres un experto en presentaciones corporativas.
+Genera entre 6 y 8 slides en JSON estricto. SOLO JSON, sin explicaciones.
+Tipos disponibles: title, content, two_column, stat, closing.
+IMPORTANTE: Todo el texto debe empezar con mayúscula. Máximo 5 bullets por slide. Bullets concisos (máx 10 palabras).
+{
+  "title": "Título",
+  "color_primary": "1E3A5F",
+  "color_accent": "4FC3F7",
+  "slides": [
+    { "type": "title", "title": "Título principal", "subtitle": "Subtítulo descriptivo" },
+    { "type": "content", "title": "Título del slide", "bullets": ["Punto uno claro", "Punto dos claro"] },
+    { "type": "two_column", "title": "Título", "left_label": "Categoría A", "right_label": "Categoría B", "left": ["Item A1", "Item A2"], "right": ["Item B1", "Item B2"] },
+    { "type": "stat", "title": "Contexto del dato", "stat": "87%", "description": "Descripción breve del dato" },
+    { "type": "closing", "title": "Conclusión", "message": "Mensaje de cierre motivador" }
+  ]
+}`,
+        },
+        { role: 'user', content: text.substring(0, 4000) },
+      ],
+      response_format: { type: 'json_object' },
+      temperature: 0.4,
+    });
+
+    const parsed = JSON.parse(completion.choices[0].message.content || '{}');
+    const {
+      color_primary = '1E3A5F',
+      color_accent = '4FC3F7',
+      slides = [],
+    } = parsed;
+
+    const cap = (s: string) =>
+      s ? s.charAt(0).toUpperCase() + s.slice(1) : '';
+    const WHITE = 'FFFFFF';
+    const BG = 'F0F4F8';
+
+    // LAYOUT_WIDE: 13.3" × 7.5"
+    const SW = 13.3;
+    const SH = 7.5;
+    const MARGIN = 0.55;
+    const USABLE_W = SW - MARGIN * 2;
+
+    const pptx = new PptxGenJS();
+    pptx.layout = 'LAYOUT_WIDE';
+
+    for (const slide of slides) {
+      const s = pptx.addSlide();
+
+      // ── TITLE ─────────────────────────────────────────────────────
+      if (slide.type === 'title') {
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: '100%',
+          fill: { color: color_primary },
+        });
+        // Barra vertical izquierda
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: 0.55,
+          h: '100%',
+          fill: { color: color_accent },
+        });
+        // Bloque decorativo esquina inferior derecha
+        s.addShape(pptx.ShapeType.rect, {
+          x: SW - 4,
+          y: SH - 3,
+          w: 4,
+          h: 3,
+          fill: { color: color_accent, transparency: 85 },
+        });
+        // Título
+        s.addText(cap(slide.title), {
+          x: 0.9,
+          y: 2.0,
+          w: USABLE_W,
+          h: 2.2,
+          fontSize: 46,
+          bold: true,
+          color: WHITE,
+          fontFace: 'Calibri',
+          align: 'left',
+          valign: 'middle',
+        });
+        // Línea separadora
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0.9,
+          y: 4.4,
+          w: 5.5,
+          h: 0.07,
+          fill: { color: color_accent },
+        });
+        // Subtítulo
+        s.addText(cap(slide.subtitle || ''), {
+          x: 0.9,
+          y: 4.6,
+          w: USABLE_W,
+          h: 1.0,
+          fontSize: 19,
+          color: color_accent,
+          fontFace: 'Calibri',
+          align: 'left',
+          italic: true,
+        });
+
+        // ── CONTENT (tarjetas numeradas) ──────────────────────────────
+      } else if (slide.type === 'content') {
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: '100%',
+          fill: { color: BG },
+        });
+        // Cabecera
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: 1.35,
+          fill: { color: color_primary },
+        });
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 1.32,
+          w: '100%',
+          h: 0.07,
+          fill: { color: color_accent },
+        });
+        s.addText(cap(slide.title), {
+          x: MARGIN,
+          y: 0.08,
+          w: USABLE_W,
+          h: 1.2,
+          fontSize: 30,
+          bold: true,
+          color: WHITE,
+          fontFace: 'Calibri',
+          valign: 'middle',
+        });
+
+        // Tarjetas centradas verticalmente
+        const bullets: string[] = (slide.bullets || []).slice(0, 5);
+        const cardH = 1.0;
+        const gap = 0.22;
+        const totalH = bullets.length * cardH + (bullets.length - 1) * gap;
+        const availableH = SH - 1.55;
+        const startY = 1.55 + (availableH - totalH) / 2;
+
+        bullets.forEach((b: string, i: number) => {
+          const yPos = startY + i * (cardH + gap);
+          s.addShape(pptx.ShapeType.rect, {
+            x: MARGIN,
+            y: yPos,
+            w: USABLE_W,
+            h: cardH,
+            fill: { color: WHITE },
+            line: { color: 'DDE3ED', width: 0.8 },
+          });
+          s.addShape(pptx.ShapeType.rect, {
+            x: MARGIN,
+            y: yPos,
+            w: 0.07,
+            h: cardH,
+            fill: { color: color_accent },
+          });
+          s.addShape(pptx.ShapeType.ellipse, {
+            x: MARGIN + 0.22,
+            y: yPos + cardH / 2 - 0.23,
+            w: 0.46,
+            h: 0.46,
+            fill: { color: color_primary },
+          });
+          s.addText(`${i + 1}`, {
+            x: MARGIN + 0.22,
+            y: yPos + cardH / 2 - 0.23,
+            w: 0.46,
+            h: 0.46,
+            fontSize: 12,
+            bold: true,
+            color: WHITE,
+            align: 'center',
+            valign: 'middle',
+            margin: 0,
+          });
+          s.addText(cap(b), {
+            x: MARGIN + 0.88,
+            y: yPos,
+            w: USABLE_W - 1.0,
+            h: cardH,
+            fontSize: 15,
+            color: '2D3748',
+            fontFace: 'Calibri',
+            valign: 'middle',
+          });
+        });
+
+        // ── TWO COLUMN ────────────────────────────────────────────────
+      } else if (slide.type === 'two_column') {
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: '100%',
+          fill: { color: BG },
+        });
+        // Cabecera
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: 1.35,
+          fill: { color: color_primary },
+        });
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 1.32,
+          w: '100%',
+          h: 0.07,
+          fill: { color: color_accent },
+        });
+        s.addText(cap(slide.title), {
+          x: MARGIN,
+          y: 0.08,
+          w: USABLE_W,
+          h: 1.2,
+          fontSize: 28,
+          bold: true,
+          color: WHITE,
+          fontFace: 'Calibri',
+          valign: 'middle',
+        });
+
+        const colGap = 0.6;
+        const colW = (USABLE_W - colGap) / 2;
+        const leftX = MARGIN;
+        const rightX = MARGIN + colW + colGap;
+
+        // Cabeceras de columna
+        s.addShape(pptx.ShapeType.rect, {
+          x: leftX,
+          y: 1.55,
+          w: colW,
+          h: 0.5,
+          fill: { color: color_primary },
+        });
+        s.addText(cap(slide.left_label || 'Columna A'), {
+          x: leftX,
+          y: 1.55,
+          w: colW,
+          h: 0.5,
+          fontSize: 13,
+          bold: true,
+          color: WHITE,
+          align: 'center',
+          valign: 'middle',
+        });
+        s.addShape(pptx.ShapeType.rect, {
+          x: rightX,
+          y: 1.55,
+          w: colW,
+          h: 0.5,
+          fill: { color: '4A5568' },
+        });
+        s.addText(cap(slide.right_label || 'Columna B'), {
+          x: rightX,
+          y: 1.55,
+          w: colW,
+          h: 0.5,
+          fontSize: 13,
+          bold: true,
+          color: WHITE,
+          align: 'center',
+          valign: 'middle',
+        });
+
+        // Tarjetas centradas verticalmente
+        const maxItems = Math.min(
+          Math.max((slide.left || []).length, (slide.right || []).length),
+          4,
+        );
+        const cardH = 0.95;
+        const gap = 0.18;
+        const totalH = maxItems * cardH + (maxItems - 1) * gap;
+        const availableH = SH - 2.2;
+        const startY = 2.2 + (availableH - totalH) / 2;
+
+        (slide.left || []).slice(0, 4).forEach((b: string, i: number) => {
+          const yPos = startY + i * (cardH + gap);
+          s.addShape(pptx.ShapeType.rect, {
+            x: leftX,
+            y: yPos,
+            w: colW,
+            h: cardH,
+            fill: { color: WHITE },
+            line: { color: 'DDE3ED', width: 0.8 },
+          });
+          s.addShape(pptx.ShapeType.rect, {
+            x: leftX,
+            y: yPos,
+            w: 0.07,
+            h: cardH,
+            fill: { color: color_accent },
+          });
+          s.addText(cap(b), {
+            x: leftX + 0.22,
+            y: yPos,
+            w: colW - 0.3,
+            h: cardH,
+            fontSize: 14,
+            color: '2D3748',
+            fontFace: 'Calibri',
+            valign: 'middle',
+          });
+        });
+
+        (slide.right || []).slice(0, 4).forEach((b: string, i: number) => {
+          const yPos = startY + i * (cardH + gap);
+          s.addShape(pptx.ShapeType.rect, {
+            x: rightX,
+            y: yPos,
+            w: colW,
+            h: cardH,
+            fill: { color: WHITE },
+            line: { color: 'DDE3ED', width: 0.8 },
+          });
+          s.addShape(pptx.ShapeType.rect, {
+            x: rightX,
+            y: yPos,
+            w: 0.07,
+            h: cardH,
+            fill: { color: '4A5568' },
+          });
+          s.addText(cap(b), {
+            x: rightX + 0.22,
+            y: yPos,
+            w: colW - 0.3,
+            h: cardH,
+            fontSize: 14,
+            color: '2D3748',
+            fontFace: 'Calibri',
+            valign: 'middle',
+          });
+        });
+
+        // ── STAT ──────────────────────────────────────────────────────
+      } else if (slide.type === 'stat') {
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: '100%',
+          fill: { color: color_primary },
+        });
+        // Círculo decorativo centrado
+        s.addShape(pptx.ShapeType.ellipse, {
+          x: SW / 2 - 4,
+          y: 0.5,
+          w: 8,
+          h: 6.5,
+          fill: { color: WHITE, transparency: 94 },
+        });
+        // Contexto
+        s.addText(cap(slide.title), {
+          x: MARGIN,
+          y: 0.35,
+          w: USABLE_W,
+          h: 0.9,
+          fontSize: 22,
+          bold: true,
+          color: color_accent,
+          align: 'center',
+          fontFace: 'Calibri',
+        });
+        // Línea acento
+        s.addShape(pptx.ShapeType.rect, {
+          x: SW / 2 - 1.8,
+          y: 1.35,
+          w: 3.6,
+          h: 0.07,
+          fill: { color: color_accent },
+        });
+        // Número grande — centrado vertical y horizontal
+        s.addText(slide.stat, {
+          x: MARGIN,
+          y: 1.5,
+          w: USABLE_W,
+          h: 3.8,
+          fontSize: 110,
+          bold: true,
+          color: WHITE,
+          align: 'center',
+          fontFace: 'Calibri',
+          valign: 'middle',
+        });
+        // Caja descripción
+        s.addShape(pptx.ShapeType.rect, {
+          x: SW / 2 - 4.5,
+          y: 5.5,
+          w: 9,
+          h: 1.1,
+          fill: { color: color_accent, transparency: 80 },
+        });
+        s.addText(cap(slide.description || ''), {
+          x: SW / 2 - 4.5,
+          y: 5.5,
+          w: 9,
+          h: 1.1,
+          fontSize: 18,
+          color: WHITE,
+          align: 'center',
+          fontFace: 'Calibri',
+          valign: 'middle',
+        });
+
+        // ── CLOSING ───────────────────────────────────────────────────
+      } else if (slide.type === 'closing') {
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: '100%',
+          h: '100%',
+          fill: { color: color_primary },
+        });
+        // Barra vertical izquierda
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0,
+          y: 0,
+          w: 0.55,
+          h: '100%',
+          fill: { color: color_accent },
+        });
+        // Caja central semitransparente
+        s.addShape(pptx.ShapeType.rect, {
+          x: 1.8,
+          y: 2.6,
+          w: SW - 3.6,
+          h: 2.6,
+          fill: { color: WHITE, transparency: 92 },
+        });
+        // Título
+        s.addText(cap(slide.title), {
+          x: 0.9,
+          y: 1.8,
+          w: USABLE_W,
+          h: 1.3,
+          fontSize: 42,
+          bold: true,
+          color: WHITE,
+          align: 'center',
+          fontFace: 'Calibri',
+        });
+        // Mensaje — caja amplia para evitar cortes
+        s.addText(cap(slide.message || ''), {
+          x: 2.2,
+          y: 2.8,
+          w: SW - 4.4,
+          h: 2.2,
+          fontSize: 18,
+          color: color_accent,
+          align: 'center',
+          fontFace: 'Calibri',
+          italic: true,
+          valign: 'middle',
+        });
+        // Línea inferior
+        s.addShape(pptx.ShapeType.rect, {
+          x: 0.9,
+          y: SH - 0.75,
+          w: 5.5,
+          h: 0.12,
+          fill: { color: color_accent },
+        });
+      }
+    }
+
+    return Buffer.from(
+      (await pptx.write({ outputType: 'nodebuffer' })) as ArrayBuffer,
+    );
   }
 }

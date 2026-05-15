@@ -1,3 +1,4 @@
+// create-content.dto.ts
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Transform } from 'class-transformer';
 import {
@@ -34,21 +35,47 @@ export class CreateContentDto {
   @IsString()
   url?: string;
 
-  @ApiProperty({ example: 'URL del servicio', required: false })
+  @ApiPropertyOptional({
+    description: 'URL de una imagen de portada',
+    example: 'https://ejemplo.com/imagen.jpg'
+  })
   @IsString()
   @IsOptional()
   imageUrl?: string;
-  @ApiPropertyOptional({ example: 'URL de una imagen de portada' })
-  @IsString()
-  @IsOptional()
 
-  // 🚀 ESTE CAMPO ES PARA QUE SWAGGER MUESTRE EL BOTÓN DE SUBIR ARCHIVO
-  @ApiProperty({ type: 'string', format: 'binary', required: false })
-  @IsOptional()
-  file?: any;
-
-  @ApiPropertyOptional({ example: 'URL del video del contenido' })
+  @ApiPropertyOptional({
+    description: 'URL del video del contenido',
+    example: 'https://youtube.com/watch?v=...'
+  })
   @IsString()
   @IsOptional()
   videoUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'URL de la presentación del contenido',
+    example: 'https://docs.google.com/presentation/...'
+  })
+  @IsString()
+  @IsOptional()
+  presentationUrl?: string;
+
+  @ApiPropertyOptional({
+    description: 'Resumen del contenido (para modo manual)',
+    example: 'Este es un resumen del contenido...'
+  })
+  @IsString()
+  @IsOptional()
+  summary?: string;
+
+  @ApiPropertyOptional({
+    description: 'URL del documento PDF (material descargable)',
+    example: 'https://ejemplo.com/documento.pdf'
+  })
+  @IsString()
+  @IsOptional()
+  documentUrl?: string;
+
+  @ApiProperty({ type: 'string', format: 'binary', required: false })
+  @IsOptional()
+  file?: any;
 }
