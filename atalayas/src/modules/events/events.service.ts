@@ -8,20 +8,22 @@ import { UpdateEventDto } from './dto/update-event.dto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { User } from '@prisma/client';
 import { StorageService } from '../../infrastructure/storage/storage.service';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class EventsService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly storageService: StorageService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async create(
-    createDto: CreateEventDto,
+    createDto: CreateEventDto, // Usar any o extender el DTO para incluir sendEmail
     requestUser: User,
     file?: Express.Multer.File,
   ) {
-    // 1. Permisos: Solo ADMIN o GENERAL_ADMIN
+    // 1. Permisos
     if (requestUser.role === 'EMPLOYEE' || requestUser.role === 'PUBLIC') {
       throw new ForbiddenException('No tienes permisos para crear eventos');
     }
@@ -36,15 +38,19 @@ export class EventsService {
     let companyId: string | null;
     if (requestUser.role === 'GENERAL_ADMIN') {
       companyId =
-        createDto.companyId !== undefined ? createDto.companyId : null;
+        createDto.companyId && createDto.companyId !== 'null'
+          ? createDto.companyId
+          : null;
     } else {
       companyId = requestUser.companyId;
     }
-    return await this.prismaService.events.create({
+
+    // 4. Crear en DB
+    const event = await this.prismaService.events.create({
       data: {
         title: createDto.title,
         description: createDto.description,
-        event_date: new Date(createDto.event_date), // Aseguramos que sea objeto Date
+        event_date: new Date(createDto.event_date),
         location: createDto.location,
         max_capacity: createDto.max_capacity
           ? Number(createDto.max_capacity)
@@ -53,6 +59,20 @@ export class EventsService {
         companyId: companyId,
       },
     });
+
+    // 5. NOTIFICACIÓN (Nuevo)
+    if (createDto.sendEmail) {
+      await this.notificationsService.notifyByEmail({
+        targetCompanyId: event.companyId,
+        isPublic: event.companyId === null, // Si no tiene empresa, es público
+        title: `Nuevo Evento: ${event.title}`,
+        message: `Te invitamos a participar en nuestro próximo evento el día ${event.event_date.toLocaleDateString()}. \nLugar: ${event.location}`,
+        type: 'EVENTO',
+        link: `/dashboard/events/${event.id}`,
+      });
+    }
+
+    return event;
   }
 
   async findAll(requestUser: User) {
@@ -68,6 +88,7 @@ export class EventsService {
     return await this.prismaService.events.findMany({
       where,
       include: {
+        Company: { select: { name: true } },
         _count: { select: { EventAttendees: true } },
       },
       orderBy: { event_date: 'asc' },
@@ -129,19 +150,14 @@ export class EventsService {
 
   async update(
     id: string,
-    updateDto: UpdateEventDto,
+    updateDto: any,
     requestUser: User,
     file?: Express.Multer.File,
   ) {
-    // 1. Buscar el evento existente
-    const event = await this.prismaService.events.findUnique({
-      where: { id },
-    });
-
+    const event = await this.prismaService.events.findUnique({ where: { id } });
     if (!event) throw new NotFoundException('Evento no encontrado');
 
-    // 2. Control de Acceso (Seguridad)
-    // Si es ADMIN de empresa, verificamos que el evento sea de su misma empresa
+    // Seguridad
     if (
       requestUser.role === 'ADMIN' &&
       event.companyId !== requestUser.companyId
@@ -150,21 +166,18 @@ export class EventsService {
         'No tienes permiso para editar eventos de otra empresa',
       );
     }
-
-    // Si es un rol inferior, prohibimos la edición
     if (requestUser.role === 'EMPLOYEE' || requestUser.role === 'PUBLIC') {
-      throw new ForbiddenException('No tienes permisos para editar eventos');
+      throw new ForbiddenException('No tienes permisos');
     }
 
-    // 3. Gestión de la imagen
+    // Gestión de imagen
     let imageUrl = event.image_url;
     if (file) {
-      // Si suben una nueva, podrías opcionalmente borrar la anterior aquí
       imageUrl = await this.storageService.uploadFile(file);
     }
 
-    // 4. Ejecutar la actualización
-    return await this.prismaService.events.update({
+    // Actualizar
+    const updatedEvent = await this.prismaService.events.update({
       where: { id },
       data: {
         title: updateDto.title ?? event.title,
@@ -177,13 +190,26 @@ export class EventsService {
           ? Number(updateDto.max_capacity)
           : event.max_capacity,
         image_url: imageUrl,
-        // El companyId NO debería cambiarse a menos que seas GENERAL_ADMIN
         companyId:
           requestUser.role === 'GENERAL_ADMIN' && updateDto.companyId
             ? updateDto.companyId
             : event.companyId,
       },
     });
+
+    // NOTIFICACIÓN EN ACTUALIZACIÓN (Opcional)
+    if (updateDto.sendEmail) {
+      await this.notificationsService.notifyByEmail({
+        targetCompanyId: updatedEvent.companyId,
+        isPublic: updatedEvent.companyId === null,
+        title: `Actualización de Evento: ${updatedEvent.title}`,
+        message: `Ha habido cambios en el evento "${updatedEvent.title}". Revisa los detalles actualizados.`,
+        type: 'EVENTO',
+        link: `/dashboard/events/${updatedEvent.id}`,
+      });
+    }
+
+    return updatedEvent;
   }
 
   async remove(id: string, requestUser: User) {
