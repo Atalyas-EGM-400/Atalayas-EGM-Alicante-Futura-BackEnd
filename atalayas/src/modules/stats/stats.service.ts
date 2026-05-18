@@ -40,7 +40,7 @@ export class StatsService {
       roleDistribution,
       hires,
       userDeparturesRaw,
-      companyDeparturesRaw, // Ya no usamos el array vacío de parche
+      companyDeparturesRaw,
     ] = await Promise.all([
       isGeneral ? this.prisma.company.count() : Promise.resolve(1),
       this.prisma.user.count({ where: companyFilter }),
@@ -114,7 +114,7 @@ export class StatsService {
         where: companyFilter,
         _count: true,
       }),
-      // Altas: empleados activos incorporados en los últimos 6 meses
+      // Altas
       this.prisma.user.findMany({
         where: {
           ...companyFilter,
@@ -124,7 +124,7 @@ export class StatsService {
         select: { createdAt: true },
         orderBy: { createdAt: 'asc' },
       }),
-      // Bajas de usuarios: empleados desactivados en los últimos 6 meses
+      // Bajas de usuarios
       this.prisma.user.findMany({
         where: {
           ...companyFilter,
@@ -134,8 +134,7 @@ export class StatsService {
         select: { leftAt: true },
         orderBy: { leftAt: 'asc' },
       }),
-
-      // ── AHORA SÍ: Consulta real para obtener bajas de empresas (solo para GENERAL_ADMIN) ──
+      // Bajas de empresas (solo GENERAL_ADMIN)
       isGeneral
         ? this.prisma.company.findMany({
           where: {
@@ -206,8 +205,12 @@ export class StatsService {
       trends: { usersByMonth, companiesByMonth },
       workforce: {
         hires,
-        userDepartures: userDeparturesRaw.map((d: any) => ({ createdAt: d.leftAt })),
-        companyDepartures: companyDeparturesRaw.map((c: any) => ({ createdAt: c.leftAt })),
+        userDepartures: userDeparturesRaw.map((d: { leftAt: Date | null }) => ({
+          createdAt: d.leftAt,
+        })),
+        companyDepartures: companyDeparturesRaw.map((c: { leftAt: Date | null }) => ({
+          createdAt: c.leftAt,
+        })),
       },
     };
   }

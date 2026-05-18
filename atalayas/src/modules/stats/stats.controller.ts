@@ -12,11 +12,19 @@ import { Roles } from '../../common/decorators/roles.decorator';
 @UseGuards(AuthGuard, RolesGuard)
 @Controller('stats')
 export class StatsController {
-  constructor(private readonly statsService: StatsService) {}
+  constructor(private readonly statsService: StatsService) { }
 
+  // Este endpoint es para los Admins de empresa (tu panel normal)
   @Get()
-  @Roles('GENERAL_ADMIN', 'ADMIN')
+  @Roles('ADMIN')
   async getStats(@Req() req: Request & { user: User }) {
+    return this.statsService.getGlobalStats(req.user);
+  }
+
+  // Este endpoint es para el Admin General (tu panel de control de infraestructura)
+  @Get('general')
+  @Roles('GENERAL_ADMIN')
+  async getGeneralStats(@Req() req: Request & { user: User }) {
     return this.statsService.getGlobalStats(req.user);
   }
 }
