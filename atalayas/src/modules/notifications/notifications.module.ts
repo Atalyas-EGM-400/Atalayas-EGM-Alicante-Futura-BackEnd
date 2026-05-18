@@ -1,4 +1,3 @@
-// notifications.module.ts
 import { Global, Module } from '@nestjs/common';
 import { MailerModule } from '@nestjs-modules/mailer';
 import { NotificationsService } from './notifications.service';

@@ -48,7 +48,6 @@ export class CreateEventDto {
   @IsOptional()
   companyId?: string;
 
-  // --- CAMPO NUEVO PARA NOTIFICACIONES ---
   @ApiProperty({ example: false, required: false })
   @IsOptional()
   @Transform(({ value }) => value === 'true' || value === true)
