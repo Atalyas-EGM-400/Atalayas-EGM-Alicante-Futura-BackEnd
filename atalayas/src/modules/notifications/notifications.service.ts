@@ -17,18 +17,19 @@ export class NotificationsService {
     type: 'EVENTO' | 'ANUNCIO';
     link: string;
   }) {
-    // 1. Buscamos los usuarios que deben recibir el mail
     const users = await this.prisma.user.findMany({
-      where: {
-        OR: [
-          options.isPublic ? { role: 'PUBLIC' } : {}, // Si es público, a usuarios externos
-          { companyId: options.targetCompanyId }, // A los de la empresa específica
-          { role: 'GENERAL_ADMIN' }, // Siempre a los super admins
-        ],
-      },
+      where: options.isPublic
+        ? { status: 'ACTIVE' } // Público → toda la plataforma
+        : {
+            OR: [
+              { companyId: options.targetCompanyId }, // Privado → solo esa empresa
+              { role: 'GENERAL_ADMIN' },
+            ],
+          },
     });
+    console.log(users.length);
 
-    // 2. Enviamos los correos de forma asíncrona (sin bloquear el servidor)
+    // 2. Enviamos los correos de forma asíncrona
     const emailPromises = users.map((user) =>
       this.mailerService
         .sendMail({
@@ -37,10 +38,10 @@ export class NotificationsService {
           html: `
           <div style="font-family: sans-serif; max-width: 600px; margin: auto; border: 1px solid #eee; padding: 20px; border-radius: 15px;">
             <h2 style="color: #333;">Hola ${user.name || 'Usuario'}</h2>
-            <p style="font-size: 16px;">Hay un nuevo <strong>${options.type.toLowerCase()}</strong> en la plataforma:</p>
+            <p style="font-size: 16px;">Hay un nuevo <strong>${options.type.toLowerCase()}</strong> en la plataforma por parte de ${options.isPublic ? 'Atalayas EGM' : 'tu empresa'}:</p>
             <div style="background: #f9f9f9; padding: 15px; border-left: 4px solid #000; margin: 20px 0;">
               <h3 style="margin-top: 0;">${options.title}</h3>
-              <p>${options.message.substring(0, 150)}...</p>
+              <p>${options.message.substring(0, 150)}</p>
             </div>
             <a href="https://tu-plataforma.com${options.link}" 
                style="display: inline-block; background: #000; color: #fff; padding: 12px 25px; text-decoration: none; border-radius: 8px; font-weight: bold;">
@@ -54,7 +55,6 @@ export class NotificationsService {
         ),
     );
 
-    // No usamos await aquí para no hacer esperar al Admin mientras se envían 100 correos
     Promise.all(emailPromises);
   }
 
