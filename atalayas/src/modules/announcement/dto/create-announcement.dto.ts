@@ -26,7 +26,17 @@ export class CreateAnnouncementDto {
 
   @ApiProperty({ example: false, required: false })
   @IsOptional()
-  @Transform(({ value }) => value === 'true')
+  @Transform(({ value }) => {
+    // Caso 1: Es un booleano real
+    if (typeof value === 'boolean') return value;
+    // Caso 2: Es un string (FormData siempre envía strings)
+    if (typeof value === 'string') {
+      const v = value.trim().toLowerCase();
+      if (v === 'true' || v === '1') return true;
+      if (v === 'false' || v === '0' || v === '') return false;
+    }
+    return false; // Por defecto, si hay duda, es falso
+  })
   @IsBoolean()
   sendEmail?: boolean; // El nuevo campo para el correo
 

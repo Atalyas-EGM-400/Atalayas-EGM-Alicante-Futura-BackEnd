@@ -61,7 +61,12 @@ export class AnnouncementService {
 
     // 4. NOTIFICACIÓN POR EMAIL (Nuevo)
     // Verificamos si sendEmail viene en el DTO (recuerda que desde FormData llega como string)
-    if (createAnnouncementDto.sendEmail) {
+    const shouldSendEmail =
+      createAnnouncementDto.sendEmail === true ||
+      String(createAnnouncementDto.sendEmail) === 'true' ||
+      String(createAnnouncementDto.sendEmail) === '1';
+
+    if (shouldSendEmail) {
       await this.notificationsService.notifyByEmail({
         targetCompanyId: announcement.companyId,
         isPublic: announcement.isPublic,
