@@ -21,6 +21,7 @@ import { SuggestionsModule } from './modules/suggestions/suggestions.module';
 import { ActivityModule } from './modules/activity/activity.module';
 import { EventsModule } from './modules/events/events.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
+import { CommunityModule } from './modules/community/community.module';
 
 @Module({
   imports: [
@@ -58,6 +59,7 @@ import { NotificationsModule } from './modules/notifications/notifications.modul
     ActivityModule,
     EventsModule,
     NotificationsModule,
+    CommunityModule,
   ],
   controllers: [],
   providers: [],
