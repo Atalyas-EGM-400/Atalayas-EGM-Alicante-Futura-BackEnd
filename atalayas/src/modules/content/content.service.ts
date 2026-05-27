@@ -20,7 +20,7 @@ export class ContentService {
     private readonly aiService: AiService,
     private readonly storageService: StorageService,
     private readonly enrollmentService: EnrollmentService,
-  ) { }
+  ) {}
 
   async create(
     createContentDto: CreateContentDto,
@@ -75,117 +75,117 @@ export class ContentService {
     let presentationUrl: string | null = null;
 
     // 3. Procesamiento principal
+    // Reemplaza el bloque "if (file) {" entero por esto:
+    let rawText = '';
+
     if (file) {
       finalUrl = await this.storageService.uploadFile(file);
+      rawText = await this.aiService.extractTextFromPdf(file.buffer);
+    } else if (createContentDto.url) {
+      finalUrl = createContentDto.url;
+      // Descargamos el PDF de la URL y extraemos texto igual que con archivo
+      const response = await fetch(createContentDto.url);
+      const arrayBuffer = await response.arrayBuffer();
+      const buffer = Buffer.from(arrayBuffer);
+      rawText = await this.aiService.extractTextFromPdf(buffer);
+    }
 
-      // Verificamos si hay alguna opción de IA activa
-      if (
-        options.generateSummary ||
-        options.generateQuiz ||
-        options.generatePodcast ||
-        options.generateImage ||
-        options.generateVideo ||
-        options.generateLab ||
-        options.generatePresentation
-      ) {
-        const rawText = await this.aiService.extractTextFromPdf(file.buffer);
-        const tasks: Promise<void>[] = [];
+    const hasAiOptions =
+      options.generateSummary ||
+      options.generateQuiz ||
+      options.generatePodcast ||
+      options.generateImage ||
+      options.generateVideo ||
+      options.generateLab ||
+      options.generatePresentation;
 
-        // Tarea: RESUMEN e IMAGEN (Agrupadas)
-        if (options.generateSummary) {
-          tasks.push(
-            this.aiService
-              .generateSummary(rawText)
-              .then((res) => {
-                summary = res;
-              })
-              .catch((err) =>
-                console.error('[AI-Summary] Error:', err.message),
-              ),
-          );
-        }
+    if (rawText && hasAiOptions) {
+      const tasks: Promise<void>[] = [];
 
-        if (options.generateImage) {
-          tasks.push(
-            this.aiService
-              .generateImage(rawText)
-              .then((res) => {
-                imageUrl = res;
-              })
-              .catch((err) => console.error('[AI-Image] Error:', err.message)),
-          );
-        }
-
-        if (options.generateVideo) {
-          tasks.push(
-            this.aiService
-              .generateVideo(rawText)
-              .then((res) => {
-                if (res) videoUrl = res;
-              })
-              .catch((err) => console.error('[AI-Video] Error:', err.message)),
-          );
-        }
-
-        if (options.generateQuiz) {
-          tasks.push(
-            this.aiService
-              .generateQuizFromText(rawText)
-              .then((res) => {
-                quizData = res;
-              })
-              .catch((err) => console.error('[AI-Quiz] Error:', err.message)),
-          );
-        }
-
-        if (options.generatePodcast) {
-          tasks.push(
-            (async () => {
-              const { script, audioBuffer } =
-                await this.aiService.generatePodcast(rawText);
-              const audioUrl = await this.storageService.uploadBuffer(
-                audioBuffer,
-                `podcast-${Date.now()}.mp3`,
-                'audio/mpeg',
-              );
-              podcastData = { url: audioUrl, script };
-            })().catch((err) =>
-              console.error('[AI-Podcast] Error:', err.message),
-            ),
-          );
-        }
-
-        if (options.generateLab) {
-          tasks.push(
-            this.aiService
-              .generatePracticeLab(rawText)
-              .then((res) => {
-                labData = res;
-              })
-              .catch((err) => console.error('[AI-Lab] Error:', err.message)),
-          );
-        }
-
-        if (options.generatePresentation) {
-          tasks.push(
-            this.aiService
-              .generatePresentation(rawText)
-              .then(async (buffer) => {
-                presentationUrl = await this.storageService.uploadBuffer(
-                  buffer,
-                  `presentation-${Date.now()}.pptx`,
-                  'application/vnd.openxmlformats-officedocument.presentationml.presentation',
-                );
-              })
-              .catch((err) =>
-                console.error('[AI-Presentation] Error:', err.message),
-              ),
-          );
-        }
-
-        // Esperamos a todas las IAs
-        await Promise.allSettled(tasks);
+      if (options.generateSummary) {
+        tasks.push(
+          this.aiService
+            .generateSummary(rawText)
+            .then((res) => {
+              summary = res;
+            })
+            .catch((err) => console.error('[AI-Summary] Error:', err.message)),
+        );
       }
+      if (options.generateImage) {
+        tasks.push(
+          this.aiService
+            .generateImage(rawText)
+            .then((res) => {
+              imageUrl = res;
+            })
+            .catch((err) => console.error('[AI-Image] Error:', err.message)),
+        );
+      }
+      if (options.generateVideo) {
+        tasks.push(
+          this.aiService
+            .generateVideo(rawText)
+            .then((res) => {
+              if (res) videoUrl = res;
+            })
+            .catch((err) => console.error('[AI-Video] Error:', err.message)),
+        );
+      }
+      if (options.generateQuiz) {
+        tasks.push(
+          this.aiService
+            .generateQuizFromText(rawText)
+            .then((res) => {
+              quizData = res;
+            })
+            .catch((err) => console.error('[AI-Quiz] Error:', err.message)),
+        );
+      }
+      if (options.generatePodcast) {
+        tasks.push(
+          (async () => {
+            const { script, audioBuffer } =
+              await this.aiService.generatePodcast(rawText);
+            const audioUrl = await this.storageService.uploadBuffer(
+              audioBuffer,
+              `podcast-${Date.now()}.mp3`,
+              'audio/mpeg',
+            );
+            podcastData = { url: audioUrl, script };
+          })().catch((err) =>
+            console.error('[AI-Podcast] Error:', err.message),
+          ),
+        );
+      }
+      if (options.generateLab) {
+        tasks.push(
+          this.aiService
+            .generatePracticeLab(rawText)
+            .then((res) => {
+              labData = res;
+            })
+            .catch((err) => console.error('[AI-Lab] Error:', err.message)),
+        );
+      }
+      if (options.generatePresentation) {
+        tasks.push(
+          this.aiService
+            .generatePresentation(rawText)
+            .then(async (buffer) => {
+              presentationUrl = await this.storageService.uploadBuffer(
+                buffer,
+                `presentation-${Date.now()}.pptx`,
+                'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+              );
+            })
+            .catch((err) =>
+              console.error('[AI-Presentation] Error:', err.message),
+            ),
+        );
+      }
+
+      await Promise.allSettled(tasks);
     }
 
     // 4. Calcular orden correlativo
@@ -300,21 +300,14 @@ export class ContentService {
       const hasQuiz = Boolean(
         quizData &&
         quizData !== 'null' &&
-        (
-          (Array.isArray(quizData) && quizData.length > 0) ||
-          (
-            typeof quizData === 'object' &&
+        ((Array.isArray(quizData) && quizData.length > 0) ||
+          (typeof quizData === 'object' &&
             quizData.questions &&
             Array.isArray(quizData.questions) &&
-            quizData.questions.length > 0
-          )
-        )
+            quizData.questions.length > 0)),
       );
 
-      const hasLab = Boolean(
-        labData &&
-        labData !== 'null'
-      );
+      const hasLab = Boolean(labData && labData !== 'null');
 
       const { userProgresses, ...rest } = content;
 
@@ -333,7 +326,6 @@ export class ContentService {
         completedAt: progress?.completedAt ?? null,
       };
     });
-
   }
 
   async findOne(id: string, requestUser: User) {
@@ -378,21 +370,14 @@ export class ContentService {
     const hasQuiz = Boolean(
       quizData &&
       quizData !== 'null' &&
-      (
-        (Array.isArray(quizData) && quizData.length > 0) ||
-        (
-          typeof quizData === 'object' &&
+      ((Array.isArray(quizData) && quizData.length > 0) ||
+        (typeof quizData === 'object' &&
           quizData.questions &&
           Array.isArray(quizData.questions) &&
-          quizData.questions.length > 0
-        )
-      )
+          quizData.questions.length > 0)),
     );
 
-    const hasLab = Boolean(
-      labData &&
-      labData !== 'null'
-    );
+    const hasLab = Boolean(labData && labData !== 'null');
 
     return {
       ...rest,
@@ -457,8 +442,6 @@ export class ContentService {
     return this.prisma.content.delete({ where: { id } });
   }
 
-
-
   async completeQuiz(
     contentId: string,
     requestUser: User,
@@ -473,11 +456,7 @@ export class ContentService {
       };
     }
 
-    await this.evaluateCompletion(
-      requestUser.id,
-      contentId,
-      'quiz',
-    );
+    await this.evaluateCompletion(requestUser.id, contentId, 'quiz');
 
     console.log('QUIZ ENDPOINT HIT');
     console.log('BODY:', data);
@@ -488,13 +467,7 @@ export class ContentService {
   }
 
   async completeLab(contentId: string, requestUser: User) {
-    await this.evaluateCompletion(
-
-      requestUser.id,
-      contentId,
-      'lab',
-
-    );
+    await this.evaluateCompletion(requestUser.id, contentId, 'lab');
 
     console.log('LAB ENDPOINT HIT');
     console.log('USER:', requestUser.id);
@@ -506,11 +479,7 @@ export class ContentService {
   }
 
   async markAsViewed(contentId: string, requestUser: User) {
-    await this.evaluateCompletion(
-      requestUser.id,
-      contentId,
-      'view',
-    );
+    await this.evaluateCompletion(requestUser.id, contentId, 'view');
     console.log('VIEW ENDPOINT HIT');
     console.log('USER:', requestUser.id);
     console.log('CONTENT:', contentId);
@@ -538,21 +507,14 @@ export class ContentService {
     const hasQuiz = Boolean(
       quizData &&
       quizData !== 'null' &&
-      (
-        (Array.isArray(quizData) && quizData.length > 0) ||
-        (
-          typeof quizData === 'object' &&
+      ((Array.isArray(quizData) && quizData.length > 0) ||
+        (typeof quizData === 'object' &&
           quizData.questions &&
           Array.isArray(quizData.questions) &&
-          quizData.questions.length > 0
-        )
-      )
+          quizData.questions.length > 0)),
     );
 
-    const hasLab = Boolean(
-      labData &&
-      labData !== 'null'
-    );
+    const hasLab = Boolean(labData && labData !== 'null');
 
     const progress = await this.prisma.userProgress.upsert({
       where: {
@@ -571,7 +533,6 @@ export class ContentService {
         labCompleted: false,
         isCompleted: false,
       },
-
     });
 
     let viewed = progress.viewed;
@@ -632,10 +593,7 @@ export class ContentService {
     });
 
     if (completed) {
-      await this.enrollmentService.completeManualLesson(
-        userId,
-        contentId,
-      );
+      await this.enrollmentService.completeManualLesson(userId, contentId);
     }
 
     return completed;
