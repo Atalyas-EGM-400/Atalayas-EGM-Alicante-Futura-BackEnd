@@ -469,9 +469,12 @@ model Company {
   description    String?
   logoUrl        String?
   website        String?
+  status         UserStatus       @default(ACTIVE)
+  leftAt         DateTime?        @db.Timestamptz(6)
   Announcement   Announcement[]
   Course         Course[]
   Document       Document[]
+  Events         Events[]
   OnboardingStep OnboardingStep[]
   Service        Service[]
   Suggestion     Suggestion[]
@@ -524,57 +527,65 @@ model Enrollment {
 }
 
 model User {
-  email            String             @unique
-  name             String?            @default("Usuario")
-  role             Role               @default(EMPLOYEE)
-  createdAt        DateTime           @default(now())
-  id               String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  companyId        String?            @db.Uuid
-  avatarUrl        String?
-  resetToken       String?            @unique
-  resetTokenExp    DateTime?
-  onboardingDone   Boolean            @default(false)
-  firstLoginAt     DateTime?          @db.Timestamptz(6)
-  jobRole          String             @default("No asignado")
-  Document         Document[]
-  Enrollment       Enrollment[]
-  Suggestion       Suggestion[]
-  Company          Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
-  users            users              @relation(fields: [id], references: [id], onDelete: Cascade)
-  userProgresses   UserProgress[]
-  userTaskProgress UserTaskProgress[]
+  email                 String             @unique
+  name                  String?            @default("Usuario")
+  role                  Role               @default(EMPLOYEE)
+  createdAt             DateTime           @default(now())
+  id                    String             @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  companyId             String?            @db.Uuid
+  avatarUrl             String?
+  resetToken            String?            @unique
+  resetTokenExp         DateTime?
+  onboardingDone        Boolean            @default(false)
+  firstLoginAt          DateTime?          @db.Timestamptz(6)
+  jobRole               String             @default("No asignado")
+  status                UserStatus         @default(ACTIVE)
+  leftAt                DateTime?          @db.Timestamptz(6)
+  lastNotificationsRead DateTime?          @db.Timestamptz(6)
+  Document              Document[]
+  Enrollment            Enrollment[]
+  EventAttendees        EventAttendees[]
+  Suggestion            Suggestion[]
+  Company               Company?           @relation(fields: [companyId], references: [id], onDelete: Cascade)
+  users                 users              @relation(fields: [id], references: [id], onDelete: Cascade)
+  userProgresses        UserProgress[]
+  userTaskProgress      UserTaskProgress[]
 
   @@schema("public")
 }
 
 model Content {
-  id             String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  created_at     DateTime       @default(now()) @db.Timestamptz(6)
-  title          String
-  order          Int            @db.SmallInt
-  courseId       String         @db.Uuid
-  summary        String?
-  podcast        Json?
-  quiz           Json?
-  url            String?
-  imageUrl       String?
-  videoUrl       String?
-  practiceLab    Json?
-  Course         Course         @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
-  userProgresses UserProgress[]
+  id              String         @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  created_at      DateTime       @default(now()) @db.Timestamptz(6)
+  title           String
+  order           Int            @db.SmallInt
+  courseId        String         @db.Uuid
+  summary         String?
+  podcast         Json?
+  quiz            Json?
+  url             String?
+  imageUrl        String?
+  videoUrl        String?
+  practiceLab     Json?
+  presentationUrl String?
+  Course          Course         @relation(fields: [courseId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+  userProgresses  UserProgress[]
 
   @@schema("public")
 }
 
 model UserProgress {
-  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  userId      String   @db.Uuid
-  contentId   String   @db.Uuid
-  completedAt DateTime @default(now()) @db.Timestamptz(6)
-  isCompleted Boolean  @default(false)
-  lastTime    Int      @default(0)
-  Content     Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
-  User        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  id            String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  userId        String   @db.Uuid
+  contentId     String   @db.Uuid
+  completedAt   DateTime @default(now()) @db.Timestamptz(6)
+  isCompleted   Boolean  @default(false)
+  lastTime      Int      @default(0)
+  labCompleted  Boolean  @default(false)
+  quizCompleted Boolean  @default(false)
+  viewed        Boolean  @default(false)
+  Content       Content  @relation(fields: [contentId], references: [id], onDelete: Cascade)
+  User          User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([userId, contentId])
   @@schema("public")
@@ -662,6 +673,8 @@ model OnboardingStep {
   badge           String?
   companyId       String           @db.Uuid
   created_at      DateTime         @default(now()) @db.Timestamptz(6)
+  type            String           @default("'ONBOARDING'")
+  job_role        String?
   Company         Company          @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
   onboardingTasks OnboardingTask[]
 
@@ -723,6 +736,46 @@ model Announcement {
   companyId String?  @db.Uuid
   imageUrl  String?
   Company   Company? @relation(fields: [companyId], references: [id], onDelete: Cascade)
+
+  @@schema("public")
+}
+
+model EventAttendees {
+  event_id   String   @db.Uuid
+  user_id    String   @db.Uuid
+  status     Boolean? @default(true)
+  updated_at DateTime @default(now()) @db.Timestamptz(6)
+  Events     Events   @relation(fields: [event_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "event_attendees_event_id_fkey")
+  User       User     @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: NoAction, map: "event_attendees_user_id_fkey")
+
+  @@id([event_id, user_id], map: "event_attendees_pkey")
+  @@schema("public")
+}
+
+model Events {
+  id             String           @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  title          String
+  description    String?
+  event_date     DateTime         @db.Timestamptz(6)
+  location       String?
+  image_url      String?
+  max_capacity   Int?             @db.SmallInt
+  created_at     DateTime         @default(now()) @db.Timestamptz(6)
+  companyId      String?          @db.Uuid
+  EventAttendees EventAttendees[]
+  Company        Company?         @relation(fields: [companyId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@schema("public")
+}
+
+model Community {
+  id          String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  name        String
+  logoUrl     String?
+  website     String?
+  type        String
+  description String?
+  created_at  DateTime @default(now()) @db.Timestamptz(6)
 
   @@schema("public")
 }
@@ -839,6 +892,13 @@ enum SuggestionStatus {
   ACCEPTED
   REJECTED
   ARCHIVED
+
+  @@schema("public")
+}
+
+enum UserStatus {
+  ACTIVE
+  INACTIVE
 
   @@schema("public")
 }

@@ -20,11 +20,17 @@ import { AuthGuard } from '../../common/guards/auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { Query } from '@nestjs/common';
+import { PrismaService } from '../../infrastructure/prisma/prisma.service';
+import { User } from '@prisma/client';
+import { GetUser } from '../../common/decorators/get-user.decorator';
 
 @ApiTags('company-request')
 @Controller('company-request')
 export class CompanyRequestController {
-  constructor(private readonly companyRequestService: CompanyRequestService) {}
+  constructor(
+    private readonly companyRequestService: CompanyRequestService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @ApiConsumes('multipart/form-data')
   @ApiBody({
@@ -78,6 +84,17 @@ export class CompanyRequestController {
   @Roles('GENERAL_ADMIN')
   async findAll(@Query('archived') archived?: string) {
     return this.companyRequestService.findAll(archived === 'true');
+  }
+
+  @Get('pending-counts')
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('GENERAL_ADMIN')
+  async getPendingCounts() {
+    const requests = await this.prisma.companyRequest.count({
+      where: { status: 'PENDING' },
+    });
+    return { requests };
   }
 
   @Get(':id')

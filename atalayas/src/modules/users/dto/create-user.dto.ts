@@ -46,6 +46,6 @@ export class CreateUserDto {
     description: 'Puesto específico de trabajo',
   })
   @IsString()
-  @IsNotEmpty({ message: 'El puesto de trabajo (jobRole) es obligatorio' })
-  jobRole!: string;
+  @IsOptional({ message: 'El puesto de trabajo (jobRole) es obligatorio' })
+  jobRole?: string;
 }

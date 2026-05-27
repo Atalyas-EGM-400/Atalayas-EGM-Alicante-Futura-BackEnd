@@ -1,6 +1,4 @@
 import { Injectable } from '@nestjs/common';
-import { CreateOnboardingDto } from './dto/create-onboarding.dto';
-import { UpdateOnboardingDto } from './dto/update-onboarding.dto';
 import { PrismaService } from '../../infrastructure/prisma/prisma.service';
 import { OnboardingStep } from '@prisma/client';
 
@@ -9,80 +7,108 @@ export class OnboardingService {
   constructor(private prisma: PrismaService) {}
 
   async savePlan(companyId: string, steps: any[]) {
-    return this.prisma.$transaction(async (tx) => {
-      const createdSteps: OnboardingStep[] = [];
+    console.log('=== savePlan ===');
+    console.log('CompanyId:', companyId);
+    console.log('Steps a procesar:', steps.length);
 
-      for (const step of steps) {
-        // 1. Upsert del Paso (si existe el día en esa empresa, actualiza; si no, crea)
-        const updatedStep = await tx.onboardingStep.upsert({
-          where: {
-            companyId_day: { companyId, day: step.day },
-          },
-          update: {
-            title: step.title,
-            description: step.description,
-            badge: step.badge,
-          },
-          create: {
-            day: step.day,
-            title: step.title,
-            description: step.description,
-            badge: step.badge,
-            companyId: companyId,
-          },
-        });
+    return this.prisma.$transaction(
+      async (tx) => {
+        const createdSteps: OnboardingStep[] = [];
 
-        // 2. Upsert de las Tareas (Corregido para manejar objetos)
-        if (step.tasks && Array.isArray(step.tasks)) {
-          for (const taskData of step.tasks) {
-            // taskData es ahora { label: string, linkAction: string }
-            await tx.onboardingTask.upsert({
-              where: {
-                stepId_label: {
-                  stepId: updatedStep.id,
-                  label: taskData.label, // Usamos la propiedad label del objeto
+        for (const step of steps) {
+          console.log(`Procesando step día ${step.day}, tipo: ${step.type}`);
+
+          const updatedStep = await tx.onboardingStep.upsert({
+            where: {
+              companyId_day: { companyId, day: step.day },
+            },
+            update: {
+              title: step.title,
+              description: step.description,
+              badge: step.badge,
+              type: step.type || 'ONBOARDING',
+              job_role: step.jobRole,
+            },
+            create: {
+              day: step.day,
+              title: step.title,
+              description: step.description,
+              badge: step.badge,
+              type: step.type || 'ONBOARDING',
+              job_role: step.jobRole,
+              companyId: companyId,
+            },
+          });
+
+          if (step.tasks && Array.isArray(step.tasks)) {
+            const taskPromises = step.tasks.map((taskData) =>
+              tx.onboardingTask.upsert({
+                where: {
+                  stepId_label: {
+                    stepId: updatedStep.id,
+                    label: taskData.label,
+                  },
                 },
-              },
-              update: {
-                linkAction: taskData.linkAction, // Actualizamos el link si cambió
-              },
-              create: {
-                label: taskData.label,
-                linkAction: taskData.linkAction,
+                update: {
+                  linkAction: taskData.linkAction,
+                },
+                create: {
+                  label: taskData.label,
+                  linkAction: taskData.linkAction,
+                  stepId: updatedStep.id,
+                },
+              }),
+            );
+
+            await Promise.all(taskPromises);
+
+            const currentLabels = step.tasks.map((t: any) => t.label);
+            await tx.onboardingTask.deleteMany({
+              where: {
                 stepId: updatedStep.id,
+                label: { notIn: currentLabels },
               },
             });
           }
 
-          // 3. Borrar tareas que ya no están en el nuevo plan
-          // Extraemos solo los labels (strings) para que 'notIn' funcione
-          const currentLabels = step.tasks.map((t: any) => t.label);
-
-          await tx.onboardingTask.deleteMany({
-            where: {
-              stepId: updatedStep.id,
-              label: { notIn: currentLabels },
-            },
-          });
+          createdSteps.push(updatedStep);
         }
 
-        createdSteps.push(updatedStep);
-      }
-      return createdSteps;
-    });
+        console.log(`Creados/actualizados ${createdSteps.length} steps`);
+        return createdSteps;
+      },
+      {
+        timeout: 15000,
+      },
+    );
   }
 
   async completeTask(userId: string, taskId: string) {
     return this.prisma.userTaskProgress.upsert({
       where: { userId_taskId: { userId, taskId } },
-      update: { done: true }, // Siempre true porque es automático
+      update: { done: true },
       create: { userId, taskId, done: true },
     });
   }
 
-  async getEmployeeDashboard(userId: string, companyId: string) {
+  async toggleTask(userId: string, taskId: string, done: boolean) {
+    return this.prisma.userTaskProgress.upsert({
+      where: {
+        userId_taskId: { userId, taskId },
+      },
+      update: { done },
+      create: { userId, taskId, done },
+    });
+  }
+
+  // CORREGIDO: Ahora incluye el progreso del usuario actual
+  async getGeneralOnboarding(companyId: string, userId: string) {
+    console.log('=== getGeneralOnboarding ===');
     return this.prisma.onboardingStep.findMany({
-      where: { companyId },
+      where: {
+        companyId: companyId,
+        type: 'ONBOARDING',
+      },
       orderBy: { day: 'asc' },
       include: {
         onboardingTasks: {
@@ -96,13 +122,39 @@ export class OnboardingService {
     });
   }
 
-  async toggleTask(userId: string, taskId: string, done: boolean) {
-    return this.prisma.userTaskProgress.upsert({
+  // CORREGIDO: Ahora incluye el progreso del usuario actual
+  async getSpecializationsByRole(
+    jobRole: string,
+    companyId: string,
+    userId: string,
+  ) {
+    console.log('=== getSpecializationsByRole ===');
+    return this.prisma.onboardingStep.findMany({
       where: {
-        userId_taskId: { userId, taskId },
+        companyId: companyId,
+        type: 'SPECIALIZATION',
+        job_role: jobRole,
       },
-      update: { done },
-      create: { userId, taskId, done },
+      orderBy: { day: 'asc' },
+      include: {
+        onboardingTasks: {
+          include: {
+            userProgress: {
+              where: { userId: userId },
+            },
+          },
+        },
+      },
+    });
+  }
+
+  async getAllSteps(companyId: string) {
+    return this.prisma.onboardingStep.findMany({
+      where: { companyId },
+      orderBy: { day: 'asc' },
+      include: {
+        onboardingTasks: true,
+      },
     });
   }
 }

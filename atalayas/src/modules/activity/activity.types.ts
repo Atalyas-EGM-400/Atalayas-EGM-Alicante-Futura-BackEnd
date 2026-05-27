@@ -3,6 +3,7 @@ export type ActivityType =
   | 'COURSE_ENROLLED'
   | 'DOCUMENT_ADDED'
   | 'ANNOUNCEMENT'
+  | 'EVENT_ADDED'
   | 'TASK_COMPLETED';
 
 export interface ActivityItem {

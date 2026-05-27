@@ -26,6 +26,6 @@ export class RegisterDto {
   companyId?: string;
 
   @IsString()
-  @IsNotEmpty({ message: 'El puesto de trabajo es requerido' })
+  @IsOptional({ message: 'El puesto de trabajo es requerido' })
   jobRole?: string;
 }

@@ -2,6 +2,7 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Delete,
   Body,
   Param,
@@ -54,6 +55,20 @@ export class AnnouncementController {
   @Get(':id') // <- Verifica que no diga '/:id' o 'announcement/:id'
   findOne(@Param('id') id: string, @Req() req: any) {
     return this.announcementService.findOne(id, req.user);
+  }
+
+  @ApiBearerAuth()
+  @UseGuards(AuthGuard, RolesGuard)
+  @Roles('GENERAL_ADMIN', 'ADMIN')
+  @Patch(':id') // Este es el que faltaba
+  @UseInterceptors(FileInterceptor('file')) // 'file' debe coincidir con el formData.append("file", ...) del front
+  async update(
+    @Param('id') id: string,
+    @Body() updateDto: any,
+    @Req() req: any,
+    @UploadedFile() file: Express.Multer.File,
+  ) {
+    return this.announcementService.update(id, updateDto, req.user, file);
   }
 
   @ApiBearerAuth()

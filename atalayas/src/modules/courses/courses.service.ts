@@ -17,8 +17,8 @@ export class CoursesService {
   constructor(
     private readonly prismaService: PrismaService,
     private readonly storageService: StorageService,
-    private readonly aiService: AiService
-  ) { }
+    private readonly aiService: AiService,
+  ) {}
 
   async create(
     createCourseDto: CreateCourseDto,
@@ -45,8 +45,13 @@ export class CoursesService {
     }
 
     // 🔥 NUEVA VALIDACIÓN: Si es especialización, jobRole es obligatorio
-    if (createCourseDto.category === 'ESPECIALIZADO' && !createCourseDto.jobRole) {
-      throw new BadRequestException('Los cursos de especialización requieren un rol');
+    if (
+      createCourseDto.category === 'ESPECIALIZADO' &&
+      !createCourseDto.jobRole
+    ) {
+      throw new BadRequestException(
+        'Los cursos de especialización requieren un rol',
+      );
     }
 
     let fileUrl: string | null = null;
@@ -62,8 +67,10 @@ export class CoursesService {
         isPublic: createCourseDto.isPublic || false,
         category: createCourseDto.category || 'BASICO',
         fileUrl,
-        // 🔥 NUEVO CAMPO: Si es onboarding, jobRole = null, si es especialización, se usa el valor
-        jobRole: createCourseDto.category === 'BASICO' ? null : createCourseDto.jobRole || null,
+        jobRole:
+          createCourseDto.category === 'BASICO'
+            ? null
+            : createCourseDto.jobRole || null,
       },
     });
   }
@@ -84,8 +91,13 @@ export class CoursesService {
     }
 
     // 🔥 NUEVA VALIDACIÓN: Si se actualiza a especialización, debe tener jobRole
-    if (updateCourseDto.category === 'ESPECIALIZADO' && !updateCourseDto.jobRole) {
-      throw new BadRequestException('Los cursos de especialización requieren un rol');
+    if (
+      updateCourseDto.category === 'ESPECIALIZADO' &&
+      !updateCourseDto.jobRole
+    ) {
+      throw new BadRequestException(
+        'Los cursos de especialización requieren un rol',
+      );
     }
 
     let fileUrl = course.fileUrl;
@@ -108,7 +120,10 @@ export class CoursesService {
     } else if (updateCourseDto.category === 'BASICO') {
       jobRoleValue = null;
     } else {
-      jobRoleValue = updateCourseDto.jobRole !== undefined ? updateCourseDto.jobRole : course.jobRole;
+      jobRoleValue =
+        updateCourseDto.jobRole !== undefined
+          ? updateCourseDto.jobRole
+          : course.jobRole;
     }
 
     return this.prismaService.course.update({
@@ -191,12 +206,10 @@ export class CoursesService {
       throw new NotFoundException(`El curso con ID ${id} no existe`);
     }
 
-    const contentWithProgress = course.Content.map(c => ({
+    const contentWithProgress = course.Content.map((c) => ({
       ...c,
       isCompleted:
-        c.userProgresses.length > 0
-          ? c.userProgresses[0].isCompleted
-          : false,
+        c.userProgresses.length > 0 ? c.userProgresses[0].isCompleted : false,
     }));
 
     // Validación de acceso por empresa
@@ -215,7 +228,9 @@ export class CoursesService {
       course.jobRole &&
       course.jobRole !== requestUser.jobRole
     ) {
-      throw new ForbiddenException('No tienes el rol requerido para acceder a este curso de especialización');
+      throw new ForbiddenException(
+        'No tienes el rol requerido para acceder a este curso de especialización',
+      );
     }
 
     return {
@@ -256,8 +271,11 @@ export class CoursesService {
 
     // Filtramos manualmente los que son null o vacíos
     return users
-      .map(u => u.jobRole)
-      .filter((role): role is string => role !== null && role !== undefined && role.trim() !== '');
+      .map((u) => u.jobRole)
+      .filter(
+        (role): role is string =>
+          role !== null && role !== undefined && role.trim() !== '',
+      );
   }
 
   // 🚀 MÉTODO PARA LA IA (CON GENERACIÓN DE QUIZ INCLUIDA)

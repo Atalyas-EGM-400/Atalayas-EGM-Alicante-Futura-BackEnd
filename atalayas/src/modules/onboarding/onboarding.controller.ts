@@ -18,30 +18,51 @@ import { Roles } from '../../common/decorators/roles.decorator';
 export class OnboardingController {
   constructor(private readonly onboardingService: OnboardingService) {}
 
-  // POST /onboarding/setup (Solo para Admins)
   @Roles('GENERAL_ADMIN', 'ADMIN')
   @Post('setup')
   async setup(@Req() req, @Body() body: { steps: any[] }) {
-    // El companyId lo sacamos del token del Admin para mayor seguridad
     return this.onboardingService.savePlan(req.user.companyId, body.steps);
   }
 
-  // GET /onboarding/me (Para el Empleado)
+  @Roles('GENERAL_ADMIN', 'ADMIN')
   @Get('me')
-  async getMyDashboard(@Req() req) {
-    return this.onboardingService.getEmployeeDashboard(
-      req.user.id,
-      req.user.companyId,
-    );
+  async getMe(@Req() req) {
+    return this.onboardingService.getAllSteps(req.user.companyId);
   }
 
-  // POST /onboarding/toggle (Para marcar tareas)
+  // CORREGIDO: Enviamos el req.user.id al servicio para mapear las tareas hechas
+  @Get('employee')
+  async getEmployeeDashboard(@Req() req) {
+    console.log('=== GET /employee ===');
+    const user = req.user;
+    const companyId = user.companyId;
+    const userId = user.id;
+
+    const generalOnboarding = await this.onboardingService.getGeneralOnboarding(
+      companyId,
+      userId,
+    );
+    console.log('General onboarding encontrado:', generalOnboarding.length);
+
+    let specializations: any[] = [];
+    if (user.jobRole) {
+      specializations = await this.onboardingService.getSpecializationsByRole(
+        user.jobRole,
+        companyId,
+        userId,
+      );
+      console.log('Specializations encontradas:', specializations.length);
+    }
+
+    return {
+      general: generalOnboarding,
+      specializations: specializations,
+    };
+  }
+
   @Post('toggle')
   async toggle(@Req() req, @Body() body: { taskId: string; done: boolean }) {
-    console.log('--- DEBUG TOGGLE ---');
-    console.log('Usuario completo en req.user:', req.user);
-    console.log('ID que estamos intentando usar:', req.user?.id);
-    console.log('Body recibido:', body);
+    console.log('=== POST /toggle ===');
     return this.onboardingService.toggleTask(
       req.user.id,
       body.taskId,

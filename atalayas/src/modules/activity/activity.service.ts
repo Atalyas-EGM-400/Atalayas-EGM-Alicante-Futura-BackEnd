@@ -10,15 +10,22 @@ export class ActivityService {
     userId: string,
     limit = 10,
   ): Promise<ActivityItem[]> {
-    // Todas las queries en paralelo
+    // 1. Obtenemos el usuario primero para tener el companyId disponible
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { companyId: true },
+    });
+
+    // 2. Ejecutamos las 6 consultas en un único Promise.all
     const [
       completedContents,
       enrollments,
       documents,
       announcements,
       completedTasks,
+      events,
     ] = await Promise.all([
-      // 1. Contenidos completados recientemente
+      // 1. Contenidos
       this.prisma.userProgress.findMany({
         where: { userId, isCompleted: true },
         orderBy: { completedAt: 'desc' },
@@ -30,7 +37,7 @@ export class ActivityService {
         },
       }),
 
-      // 2. Inscripciones en cursos
+      // 2. Inscripciones
       this.prisma.enrollment.findMany({
         where: { userId },
         orderBy: { Course: { createdAt: 'desc' } },
@@ -38,48 +45,52 @@ export class ActivityService {
         include: { Course: { select: { title: true, createdAt: true } } },
       }),
 
-      // 3. Documentos subidos al usuario o a su empresa
-      this.prisma.user
-        .findUnique({ where: { id: userId }, select: { companyId: true } })
-        .then((user) =>
-          this.prisma.document.findMany({
-            where: {
-              OR: [
-                { userId },
-                { companyId: user?.companyId ?? undefined, isPublic: true },
-              ],
-            },
-            orderBy: { createdAt: 'desc' },
-            take: limit,
-          }),
-        ),
+      // 3. Documentos
+      this.prisma.document.findMany({
+        where: {
+          OR: [
+            { userId },
+            { companyId: user?.companyId ?? undefined, isPublic: true },
+          ],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
 
-      // 4. Anuncios de la empresa o públicos
-      this.prisma.user
-        .findUnique({ where: { id: userId }, select: { companyId: true } })
-        .then((user) =>
-          this.prisma.announcement.findMany({
-            where: {
-              OR: [
-                { isPublic: true },
-                { companyId: user?.companyId ?? undefined },
-              ],
-            },
-            orderBy: { createdAt: 'desc' },
-            take: limit,
-          }),
-        ),
+      // 4. Anuncios
+      this.prisma.announcement.findMany({
+        where: {
+          OR: [{ isPublic: true }, { companyId: user?.companyId ?? undefined }],
+        },
+        orderBy: { createdAt: 'desc' },
+        take: limit,
+      }),
 
-      // 5. Tareas de onboarding completadas
+      // 5. Tareas de onboarding
       this.prisma.userTaskProgress.findMany({
         where: { userId, done: true },
         orderBy: { created_at: 'desc' },
         take: limit,
         include: { Task: { select: { label: true } } },
       }),
+
+      // 6. EVENTOS (Debe ir dentro del Promise.all)
+      this.prisma.events.findMany({
+        where: {
+          OR: [
+            { companyId: user?.companyId ?? undefined },
+            { companyId: null },
+          ],
+        },
+        include: {
+          Company: { select: { name: true } },
+        },
+        orderBy: { created_at: 'desc' },
+        take: limit,
+      }),
     ]);
 
-    // Mapear cada tabla a ActivityItem uniforme
+    // 3. Mapeo uniforme
     const items: ActivityItem[] = [
       ...completedContents.map((p) => ({
         id: p.id,
@@ -131,9 +142,19 @@ export class ActivityService {
         createdAt: t.created_at,
         href: `/dashboard/employee/onboarding`,
       })),
+
+      ...events.map((ev) => ({
+        id: ev.id,
+        type: 'EVENT_ADDED' as const,
+        title: `Nuevo evento: ${ev.title}`,
+        description: ev.Company?.name || 'Atalayas EGM',
+        icon: 'bi-calendar-event-fill',
+        createdAt: ev.created_at,
+        href: `/dashboard/employee/events/${ev.id}`,
+      })),
     ];
 
-    // Ordenar por fecha descendente y limitar
+    // 4. Ordenar y limitar
     return items
       .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())
       .slice(0, limit);

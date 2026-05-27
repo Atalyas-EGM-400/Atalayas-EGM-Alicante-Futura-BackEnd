@@ -4,7 +4,7 @@ import { User, statusType, SuggestionStatus } from '@prisma/client';
 
 @Injectable()
 export class StatsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   async getGlobalStats(requestUser: User) {
     const isGeneral = requestUser.role === 'GENERAL_ADMIN';
@@ -15,6 +15,9 @@ export class StatsService {
     const enrollmentFilter = isGeneral
       ? {}
       : { User: { companyId: requestUser.companyId ?? undefined } };
+
+    const sixMonthsAgo = new Date();
+    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
     const [
       totalCompanies,
@@ -32,10 +35,12 @@ export class StatsService {
       recentCourses,
       topCourses,
       progressAggregate,
-      // --- NUEVAS CONSULTAS ---
       onboardingFinished,
       pendingSuggestions,
       roleDistribution,
+      hires,
+      userDeparturesRaw,
+      companyDeparturesRaw,
     ] = await Promise.all([
       isGeneral ? this.prisma.company.count() : Promise.resolve(1),
       this.prisma.user.count({ where: companyFilter }),
@@ -45,14 +50,17 @@ export class StatsService {
       this.prisma.course.count({ where: { ...companyFilter, isPublic: true } }),
       this.prisma.enrollment.count({ where: enrollmentFilter }),
       this.prisma.enrollment.count({
-        where: { ...enrollmentFilter, progress: 100 },
+        where: {
+          ...enrollmentFilter,
+          progress: 100,
+        },
       }),
       this.prisma.document.count({ where: companyFilter }),
       this.prisma.service.count({ where: companyFilter }),
       isGeneral
         ? this.prisma.companyRequest.count({
-            where: { status: statusType.PENDING },
-          })
+          where: { status: statusType.PENDING },
+        })
         : Promise.resolve(0),
       this.prisma.user.findMany({
         where: companyFilter,
@@ -95,24 +103,49 @@ export class StatsService {
         where: enrollmentFilter,
         select: { progress: true },
       }),
-      // Métricas de Onboarding (Usuarios con onboardingDone: true)
       this.prisma.user.count({
         where: { ...companyFilter, onboardingDone: true },
       }),
-      // Sugerencias pendientes de respuesta
       this.prisma.suggestion.count({
         where: { ...companyFilter, status: SuggestionStatus.PENDING },
       }),
-      // Distribución por puestos de trabajo (jobRole)
       this.prisma.user.groupBy({
         by: ['jobRole'],
         where: companyFilter,
         _count: true,
       }),
+      // Altas
+      this.prisma.user.findMany({
+        where: {
+          ...companyFilter,
+          status: 'ACTIVE',
+          createdAt: { gte: sixMonthsAgo },
+        },
+        select: { createdAt: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      // Bajas de usuarios
+      this.prisma.user.findMany({
+        where: {
+          ...companyFilter,
+          status: 'INACTIVE',
+          leftAt: { gte: sixMonthsAgo },
+        },
+        select: { leftAt: true },
+        orderBy: { leftAt: 'asc' },
+      }),
+      // Bajas de empresas (solo GENERAL_ADMIN)
+      isGeneral
+        ? this.prisma.company.findMany({
+          where: {
+            status: 'INACTIVE',
+            leftAt: { gte: sixMonthsAgo },
+          },
+          select: { leftAt: true },
+          orderBy: { leftAt: 'asc' },
+        })
+        : Promise.resolve([]),
     ]);
-
-    const sixMonthsAgo = new Date();
-    sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
 
     const [usersByMonth, companiesByMonth] = await Promise.all([
       this.prisma.user.findMany({
@@ -122,10 +155,10 @@ export class StatsService {
       }),
       isGeneral
         ? this.prisma.company.findMany({
-            where: { createdAt: { gte: sixMonthsAgo } },
-            select: { createdAt: true },
-            orderBy: { createdAt: 'asc' },
-          })
+          where: { createdAt: { gte: sixMonthsAgo } },
+          select: { createdAt: true },
+          orderBy: { createdAt: 'asc' },
+        })
         : Promise.resolve([]),
     ]);
 
@@ -146,17 +179,16 @@ export class StatsService {
         avgProgress:
           totalEmployees > 0
             ? Math.round(
-                (progressAggregate as { progress: number | null }[]).reduce(
-                  (sum, e) => sum + (e.progress ?? 0),
-                  0,
-                ) / totalEmployees,
-              )
+              (progressAggregate as { progress: number | null }[]).reduce(
+                (sum, e) => sum + (e.progress ?? 0),
+                0,
+              ) / totalEmployees,
+            )
             : 0,
         totalDocuments,
         totalServices,
         pendingRequests,
       },
-      // Datos añadidos para corregir el error del frontend y dar valor al Admin
       onboarding: {
         finished: onboardingFinished,
         total: totalUsers,
@@ -171,6 +203,15 @@ export class StatsService {
       recent: { users: recentUsers, courses: recentCourses },
       top: { courses: topCourses },
       trends: { usersByMonth, companiesByMonth },
+      workforce: {
+        hires,
+        userDepartures: userDeparturesRaw.map((d: { leftAt: Date | null }) => ({
+          createdAt: d.leftAt,
+        })),
+        companyDepartures: companyDeparturesRaw.map((c: { leftAt: Date | null }) => ({
+          createdAt: c.leftAt,
+        })),
+      },
     };
   }
 }

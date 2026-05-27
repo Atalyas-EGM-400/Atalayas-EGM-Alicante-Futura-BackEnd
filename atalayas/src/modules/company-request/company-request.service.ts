@@ -117,21 +117,93 @@ export class CompanyRequestService {
 
     await this.mailerService.sendMail({
       to: request.contactEmail,
-      subject: 'Solicitud aprobada - Atalayas EGM',
+      subject: '🎉 Solicitud aprobada - Atalayas EGM',
       html: `
-      <h2>¡Bienvenido a Atalayas, ${request.contactName}!</h2>
-      <p>Tu solicitud para la empresa <strong>${request.companyName}</strong> ha sido aprobada</p>
-      <p>Tus credenciales de acceso son:</p>
-      <ul>
-        <li><strong>Email:</strong> ${request.contactEmail}</li>
-        <li><strong>Contraseña provisional:</strong> ${password}</li>
-      </ul>
-      <p>Por seguridad, cambia tu contraseña al iniciar sesión por primera vez.</p>
-      <a href="http://localhost:5173/login">Acceder a la plataforma</a>
+      <!DOCTYPE html>
+      <html>
+      <head>
+        <meta charset="utf-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Bienvenido a Atalayas EGM</title>
+      </head>
+      <body style="margin: 0; padding: 0; background-color: #f4f5f7; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; color: #333333;">
+        <table border="0" cellpadding="0" cellspacing="0" width="100%" style="table-layout: fixed;">
+          <tr>
+            <td align="center" style="padding: 40px 0;">
+              <table border="0" cellpadding="0" cellspacing="0" width="100%" style="max-width: 600px; background-color: #ffffff; border-radius: 16px; overflow: hidden; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.05); border: 1px border #e1e4e8;">
+                
+                <tr>
+                  <td align="center" style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); padding: 40px 20px;">
+                    <h1 style="margin: 0; color: #ffffff; font-size: 26px; font-weight: 800; letter-spacing: -0.5px; text-transform: uppercase;">Atalayas EGM</h1>
+                    <p style="margin: 10px 0 0 0; color: #bfdbfe; font-size: 14px; font-weight: 600; tracking-widest: 0.1em;">CENTRO DE GESTIÓN</p>
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="padding: 40px 30px;">
+                    <h2 style="margin: 0 0 16px 0; color: #1e293b; font-size: 22px; font-weight: 700;">¡Hola, ${request.contactName}!</h2>
+                    <p style="margin: 0 0 24px 0; color: #64748b; font-size: 16px; line-height: 1.6;">
+                      Nos complace informarte que la solicitud de alta para la empresa <strong style="color: #1e3a8a;">${request.companyName}</strong> ha sido revisada y <strong>aprobada con éxito</strong>. ¡Te damos la bienvenida a nuestra plataforma!
+                    </p>
+
+                    <div style="background-color: #f8fafc; border-radius: 12px; padding: 24px; border: 1px solid #e2e8f0; margin-bottom: 30px;">
+                      <h3 style="margin: 0 0 14px 0; color: #334155; font-size: 14px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px;">Tus credenciales de acceso:</h3>
+                      
+                      <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                        <tr>
+                          <td style="padding: 6px 0; color: #64748b; font-size: 15px; width: 100px;"><strong>Email:</strong></td>
+                          <td style="padding: 6px 0; color: #0f172a; font-size: 15px; font-family: monospace; font-weight: bold;">${request.contactEmail}</td>
+                        </tr>
+                        <tr>
+                          <td style="padding: 6px 0; color: #64748b; font-size: 15px;"><strong>Contraseña:</strong></td>
+                          <td style="padding: 6px 0; color: #3b82f6; font-size: 15px; font-family: monospace; font-weight: bold; background-color: #eff6ff; padding-left: 8px; border-radius: 4px;">${password}</td>
+                        </tr>
+                      </table>
+                    </div>
+
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%" style="margin-bottom: 35px;">
+                      <tr>
+                        <td style="vertical-align: top; width: 24px; padding-top: 2px;">
+                          <span style="color: #ea580c; font-size: 16px;">⚠️</span>
+                        </td>
+                        <td style="color: #64748b; font-size: 13px; line-height: 1.5; padding-left: 8px;">
+                          <strong>Nota de seguridad:</strong> Esta contraseña es de carácter provisional. Por motivos de protección de datos, se te solicitará cambiarla obligatoriamente cuando accedas por primera vez.
+                        </td>
+                      </tr>
+                    </table>
+
+                    <table border="0" cellpadding="0" cellspacing="0" width="100%">
+                      <tr>
+                        <td align="center">
+                          <a href="http://localhost:5173/login" target="_blank" style="display: inline-block; background-color: #1e3a8a; color: #ffffff; font-size: 14px; font-weight: 700; text-decoration: none; padding: 14px 32px; border-radius: 8px; text-transform: uppercase; letter-spacing: 0.5px; box-shadow: 0 4px 6px rgba(30, 58, 138, 0.2); transition: background-color 0.2s;">
+                            Acceder a la plataforma
+                          </a>
+                        </td>
+                      </tr>
+                    </table>
+
+                  </td>
+                </tr>
+
+                <tr>
+                  <td style="background-color: #f8fafc; padding: 24px 30px; text-align: center; border-top: 1px solid #e2e8f0;">
+                    <p style="margin: 0; color: #94a3b8; font-size: 12px; line-height: 1.5;">
+                      Este es un correo automático, por favor no respondas a este mensaje.<br>
+                      &copy; ${new Date().getFullYear()} Atalayas EGM. Todos los derechos reservados.
+                    </p>
+                  </td>
+                </tr>
+
+              </table>
+            </td>
+          </tr>
+        </table>
+      </body>
+      </html>
       `,
     });
 
-    return { message: 'Solicitud aprovada', provisionalPassword: password };
+    return { message: 'Solicitud aprobada', provisionalPassword: password };
   }
 
   async reject(id: string, rejectReason: string) {
