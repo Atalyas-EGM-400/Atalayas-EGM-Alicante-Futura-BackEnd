@@ -35,23 +35,40 @@ export class DocumentService {
     let finalCompanyId: string | null = null;
     let finalIsPublic: boolean = false;
 
+    // --- CORRECCIÓN DE SEGURIDAD PARA MULTIPART/FORM-DATA ---
+    // Saneamos los strings falsos que vienen del formulario
+    const rawCompanyId = createDocumentDto.companyId;
+    const cleanCompanyId =
+      rawCompanyId &&
+      rawCompanyId !== '' &&
+      rawCompanyId !== 'null' &&
+      rawCompanyId !== 'undefined'
+        ? rawCompanyId
+        : null;
+
     if (requestUser.role === 'GENERAL_ADMIN') {
+      // Forzar conversión limpia a booleano
       finalIsPublic = String(createDocumentDto.isPublic) === 'true';
-      // Si es SuperAdmin y manda un UUID, lo usamos. Si lo deja vacío, es global (null)
-      finalCompanyId =
-        createDocumentDto.companyId && createDocumentDto.companyId !== ''
-          ? createDocumentDto.companyId
-          : null;
+      finalCompanyId = cleanCompanyId;
     } else {
-      // Si es Admin normal, SIEMPRE se guarda en su empresa, ponga lo que ponga
+      // Si es Admin normal, SIEMPRE va a su empresa
       finalCompanyId = requestUser.companyId;
     }
 
-    // 1. Gestionar el ID del Usuario (Opcional)
+    // Saneamos también el userId por si acaso
     let finalUserId: string | null = null;
-    if (createDocumentDto.userId && createDocumentDto.userId !== '') {
+    const rawUserId = createDocumentDto.userId;
+    const cleanUserId =
+      rawUserId &&
+      rawUserId !== '' &&
+      rawUserId !== 'null' &&
+      rawUserId !== 'undefined'
+        ? rawUserId
+        : null;
+
+    if (cleanUserId) {
       const targetUser = await this.prisma.user.findUnique({
-        where: { id: createDocumentDto.userId },
+        where: { id: cleanUserId },
       });
       if (!targetUser) throw new NotFoundException(`Usuario no encontrado`);
       if (finalCompanyId !== null && targetUser.companyId !== finalCompanyId) {
@@ -59,10 +76,10 @@ export class DocumentService {
           'Imposible, el empleado seleccionado pertenece a otra empresa.',
         );
       }
-      finalUserId = createDocumentDto.userId;
+      finalUserId = cleanUserId;
     }
 
-    // 3. Subir el archivo a Supabase
+    // Subir el archivo a Supabase
     const fileUrl = await this.storageService.uploadFile(file);
 
     return this.prisma.document.create({
@@ -70,7 +87,7 @@ export class DocumentService {
         title: createDocumentDto.title,
         fileUrl: fileUrl,
         isPublic: finalIsPublic,
-        companyId: finalCompanyId,
+        companyId: finalCompanyId, // Ahora sí guardará un NULL real de SQL
         userId: finalUserId,
       },
     });
@@ -85,13 +102,20 @@ export class DocumentService {
       });
     }
 
-    // 2. ADMIN DE EMPRESA: Ve Globales + TODOS los de su empresa (Públicos, Privados y Contratos de otros)
+    // 2. ADMIN DE EMPRESA: Ve Globales + TODOS los de su empresa
     if (requestUser.role === 'ADMIN') {
       return this.prisma.document.findMany({
         where: {
           OR: [
-            { isPublic: true, companyId: null }, // Globales del sistema
-            { companyId: requestUser.companyId }, // Toda la caja fuerte de su empresa
+            // CORRECCIÓN AQUÍ: Forzamos el NULL real de la base de datos
+            {
+              isPublic: true,
+              companyId: { equals: null },
+            },
+            // Toda la caja fuerte de su empresa (públicos y privados de sus empleados)
+            {
+              companyId: requestUser.companyId,
+            },
           ],
         },
         include: { Company: true, User: true },
@@ -99,18 +123,27 @@ export class DocumentService {
       });
     }
 
-    // 3. EMPLEADOS: Seguridad estricta
+    // 3. EMPLEADOS: Seguridad ajustada
     return this.prisma.document.findMany({
       where: {
         OR: [
-          // Nivel 1: Globales del sistema (Manuales de la plataforma)
-          { isPublic: true, companyId: null },
+          // Nivel 1: Globales del sistema (Subidos por el GENERAL_ADMIN para todos)
+          {
+            isPublic: true,
+            companyId: { equals: null },
+          },
 
-          // Nivel 2: Tablón de anuncios de SU empresa (Calendarios, normativas)
-          { isPublic: true, companyId: requestUser.companyId },
+          // Nivel 2: Documentos compartidos de SU empresa (userId es null)
+          {
+            companyId: requestUser.companyId,
+            userId: { equals: null },
+          },
 
-          // Nivel 4: SOLO SUS documentos personales (Nóminas, contratos propios)
-          { companyId: requestUser.companyId, userId: requestUser.id },
+          // Nivel 3: SOLO SUS documentos personales privados
+          {
+            companyId: requestUser.companyId,
+            userId: requestUser.id,
+          },
         ],
       },
       include: { Company: true, User: true },
@@ -128,13 +161,17 @@ export class DocumentService {
       throw new NotFoundException('Documento no encontrado');
     }
 
-    if (
-      requestUser.role !== 'GENERAL_ADMIN' &&
-      document.companyId !== requestUser.companyId
-    ) {
-      throw new ForbiddenException(
-        'No tienes permisos para ver este documento',
-      );
+    // Si el usuario no es SuperAdmin, tenemos que validar accesos
+    if (requestUser.role !== 'GENERAL_ADMIN') {
+      // Permitir el acceso si el documento es global (isPublic y sin empresa)
+      const isGlobalDoc = document.isPublic && !document.companyId;
+      const belongsToMyCompany = document.companyId === requestUser.companyId;
+
+      if (!isGlobalDoc && !belongsToMyCompany) {
+        throw new ForbiddenException(
+          'No tienes permisos para ver este documento',
+        );
+      }
     }
 
     return document;
