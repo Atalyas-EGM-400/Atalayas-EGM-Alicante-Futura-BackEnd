@@ -85,7 +85,14 @@ export class CompanyRequestService {
     }
 
     const company = await this.prismaService.company.create({
-      data: { name: request.companyName },
+      data: {
+        name: request.companyName,
+        cif: request.cif,
+        address: request.address,
+        contactPhone: request.phone,
+        activity: request.activity,
+        contactEmail: request.contactEmail,
+      },
     });
 
     const password = Math.random().toString(36).slice(-8);
