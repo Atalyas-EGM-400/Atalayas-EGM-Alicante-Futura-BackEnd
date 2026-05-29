@@ -59,44 +59,38 @@ export class CompanyRequestService {
   }
 
   async findAll(showArchived = false) {
-    const request = this.prismaService.companyRequest.findMany({
+    const requests = await this.prismaService.companyRequest.findMany({
       where: { archivedAt: showArchived ? { not: null } : null },
       orderBy: { created_at: 'desc' },
     });
-    console.log('Primera solicitud:', JSON.stringify(request, null, 2));
-    return request;
+
+    console.log('Solicitudes recuperadas:', JSON.stringify(requests, null, 2));
+    return requests;
   }
 
   async findOne(id: string) {
+    if (!id) throw new NotFoundException('ID no válido');
+
     const request = await this.prismaService.companyRequest.findUnique({
       where: { id },
     });
 
-    if (!id) throw new NotFoundException('Solicitud no encontrada');
     if (!request) throw new NotFoundException('Solicitud no encontrada');
     return request;
   }
 
   async approve(id: string) {
+    // 1. Buscamos la solicitud de manera limpia
     const request = await this.findOne(id);
 
     if (request.status !== 'PENDING') {
       throw new BadRequestException('Esta solicitud ya ha sido procesada');
     }
 
-    const company = await this.prismaService.company.create({
-      data: {
-        name: request.companyName,
-        cif: request.cif,
-        address: request.address,
-        contactPhone: request.phone,
-        activity: request.activity,
-        contactEmail: request.contactEmail,
-      },
-    });
-
+    // 2. Generamos la contraseña provisional
     const password = Math.random().toString(36).slice(-8);
 
+    console.log('1️⃣ Solicitando creación de Auth en Supabase...');
     const { data: authUser, error } =
       await this.supabaseAdmin.auth.admin.createUser({
         email: request.contactEmail,
@@ -104,28 +98,83 @@ export class CompanyRequestService {
         email_confirm: true,
       });
 
-    if (error)
-      throw new InternalServerErrorException('Error al crear el usuario');
+    if (error) {
+      console.error('❌ Error en Supabase Auth:', error.message);
+      throw new InternalServerErrorException(
+        `Error en Supabase: ${error.message}`,
+      );
+    }
 
-    await this.prismaService.user.create({
-      data: {
-        id: authUser.user.id,
-        email: request?.contactEmail,
-        name: request?.companyName,
-        role: 'ADMIN',
-        companyId: company.id,
-      },
-    });
+    console.log(
+      '2️⃣ Auth creado con éxito. Pasando a creación en Base de Datos...',
+    );
 
-    await this.prismaService.companyRequest.update({
-      where: { id },
-      data: { status: 'APPROVED' },
-    });
+    // Declaramos variables fuera para poder usarlas en el catch de limpieza si algo falla
+    let createdCompany;
+    let createdUser;
 
-    await this.mailerService.sendMail({
-      to: request.contactEmail,
-      subject: '🎉 Solicitud aprobada - Atalayas EGM',
-      html: `
+    try {
+      // 3. Crear la Empresa directamente con tu prismaService tradicional
+      console.log('-> Insertando Empresa...');
+      createdCompany = await this.prismaService.company.create({
+        data: {
+          name: request.companyName,
+          cif: request.cif,
+          address: request.address || '',
+          contactPhone: request.phone || '',
+          activity: request.activity || '',
+          contactEmail: request.contactEmail,
+        },
+      });
+
+      // 4. Crear el Usuario vinculando el ID de Supabase Auth
+      console.log('-> Insertando Usuario Administrador...');
+      createdUser = await this.prismaService.user.create({
+        data: {
+          id: authUser.user.id, // El UUID de Supabase
+          email: request.contactEmail,
+          name: request.contactName,
+          role: 'ADMIN',
+          companyId: createdCompany.id,
+        },
+      });
+
+      // 5. Actualizar el estado de la solicitud original
+      console.log('-> Actualizando Solicitud a APPROVED...');
+      await this.prismaService.companyRequest.update({
+        where: { id },
+        data: { status: 'APPROVED' },
+      });
+
+      console.log('3️⃣ Todo se ha guardado correctamente en la Base de Datos.');
+    } catch (dbError: any) {
+      console.error('❌ ERROR CRÍTICO EN PRISMA:', dbError);
+
+      // MECANISMO DE SEGURIDAD MANUAL: Si la DB falló, deshacemos Supabase Auth para no dejar basura
+      console.log(
+        '-> Deshaciendo cambios: Eliminando usuario de Supabase Auth...',
+      );
+      await this.supabaseAdmin.auth.admin.deleteUser(authUser.user.id);
+
+      // Si la empresa llegó a crearse pero el usuario falló, también la limpiamos
+      if (createdCompany?.id) {
+        console.log(
+          '-> Deshaciendo cambios: Eliminando empresa huérfana de la DB...',
+        );
+        await this.prismaService.company
+          .delete({ where: { id: createdCompany.id } })
+          .catch(() => {});
+      }
+
+      throw new InternalServerErrorException(
+        `Error al procesar en Base de Datos: ${dbError.message || dbError}`,
+      );
+    }
+    try {
+      await this.mailerService.sendMail({
+        to: request.contactEmail,
+        subject: '🎉 Solicitud aprobada - Atalayas EGM',
+        html: `
       <!DOCTYPE html>
       <html>
       <head>
@@ -208,7 +257,14 @@ export class CompanyRequestService {
       </body>
       </html>
       `,
-    });
+      });
+      console.log(
+        '🚀 ¡Correo electrónico enviado con éxito a:',
+        request.contactEmail,
+      );
+    } catch (mailError) {
+      console.error('⚠️ El usuario se creó pero el email falló:', mailError);
+    }
 
     return { message: 'Solicitud aprobada', provisionalPassword: password };
   }
